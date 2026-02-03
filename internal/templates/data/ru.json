@@ -1,0 +1,9 @@
+{
+  "limits.max_total": "Превышен лимит вызовов",
+  "limits.rate_limit": "Превышен rate limit",
+  "limits.field_min_length": "Поле {{.Field}}: минимальная длина {{.MinLength}}",
+  "limits.field_max_length": "Поле {{.Field}}: максимальная длина {{.MaxLength}}",
+  "limits.field_regex": "Поле {{.Field}}: не соответствует формату",
+  "limits.field_min": "Поле {{.Field}}: меньше минимума",
+  "limits.field_max": "Поле {{.Field}}: больше максимума"
+}

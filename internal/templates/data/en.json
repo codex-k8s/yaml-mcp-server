@@ -1,0 +1,9 @@
+{
+  "limits.max_total": "Maximum number of calls exceeded",
+  "limits.rate_limit": "Rate limit exceeded",
+  "limits.field_min_length": "Field {{.Field}} must be at least {{.MinLength}} characters",
+  "limits.field_max_length": "Field {{.Field}} must be at most {{.MaxLength}} characters",
+  "limits.field_regex": "Field {{.Field}} does not match required format",
+  "limits.field_min": "Field {{.Field}} is below minimum value",
+  "limits.field_max": "Field {{.Field}} is above maximum value"
+}

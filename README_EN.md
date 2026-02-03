@@ -1,55 +1,55 @@
 <div align="center">
   <img src="docs/media/logo.png" alt="yaml-mcp-server logo" width="120" height="120" />
   <h1>yaml-mcp-server</h1>
-  <p>🔐 MCP‑gateway с декларативными инструментами из YAML и системой аппруверов для безопасных действий модели.</p>
+  <p>🔐 MCP gateway with declarative YAML tools and a pluggable approval system for safe model actions.</p>
 </div>
 
 ![Go Version](https://img.shields.io/github/go-mod/go-version/codex-k8s/yaml-mcp-server)
 [![Go Reference](https://pkg.go.dev/badge/github.com/codex-k8s/yaml-mcp-server.svg)](https://pkg.go.dev/github.com/codex-k8s/yaml-mcp-server)
 
-🇬🇧 English version: [README_EN.md](README_EN.md)
+🇷🇺 Русская версия: [README.md](README.md)
 
-`yaml-mcp-server` — единый MCP‑сервер в кластере, который читает YAML‑DSL с описанием ресурсов и инструментов,
-подключает цепочки аппруверов и возвращает модели строго структурированные ответы.
+`yaml-mcp-server` is a single MCP server for a cluster that reads a YAML‑DSL to define tools and resources,
+executes approver chains, and returns strictly structured responses.
 
-## 🎯 Идея и мотивация
+## 🎯 Idea and Motivation
 
-Задача сервиса — безопасно исполнять «опасные» операции модели (создание секретов, изменения репо/настроек и т.д.)
-**только после явного approval** через pluggable‑аппруверы (HTTP/Shell/лимиты).
+The server enables **safe execution** of high‑risk operations (secrets, repo settings, etc.) by requiring
+explicit approval through pluggable approvers (HTTP/Shell/limits).
 
-## ✅ Ключевые возможности
+## ✅ Key Features
 
-- MCP‑сервер (HTTP/stdio) с динамическими инструментами из YAML.
-- Последовательные аппруверы на инструмент: лимиты → shell → HTTP и т.д.
-- Жёсткий контракт ответов для модели: `status`, `decision`, `reason`, `correlation_id`.
-- Встроенные health endpoints: `/healthz`, `/readyz`.
-- Шаблонизация YAML с проверкой всех используемых env до старта.
+- MCP server (HTTP/stdio) with tools created from YAML.
+- Ordered approval chains per tool (limits → shell → HTTP, etc.).
+- Strict response contract: `status`, `decision`, `reason`, `correlation_id`.
+- Health endpoints: `/healthz`, `/readyz`.
+- YAML templating with env checks before startup.
 
-## 📦 Установка
+## 📦 Installation
 
-Требуется Go **>= 1.25.5** (см. `go.mod`).
+Go **>= 1.25.5** is required (see `go.mod`).
 
 ```bash
 go install github.com/codex-k8s/yaml-mcp-server/cmd/yaml-mcp-server@latest
 ```
 
-## 🚀 Быстрый старт
+## 🚀 Quick Start
 
 ```bash
 export YAML_MCP_CONFIG=/path/to/config.yaml
-export YAML_MCP_LANG=ru
+export YAML_MCP_LANG=en
 export YAML_MCP_LOG_LEVEL=info
 
 yaml-mcp-server
 ```
 
-По умолчанию HTTP‑endpoint MCP: `http://localhost:8080/mcp`.
+Default MCP HTTP endpoint: `http://localhost:8080/mcp`.
 
-## 🧩 YAML‑DSL (кратко)
+## 🧩 YAML‑DSL (short)
 
-YAML описывает сервер, инструменты и ресурсы. Пример см. в `examples/`.
+YAML defines server settings, tools, and resources. See `examples/`.
 
-### Сервер
+### Server
 
 ```yaml
 server:
@@ -73,7 +73,7 @@ server:
     idle_timeout: "1h"
 ```
 
-### Инструмент
+### Tool
 
 ```yaml
 tools:
@@ -128,7 +128,7 @@ tools:
         echo "secret {{ .Args.secret_name }} created in {{ .Args.repo }} env {{ .Args.environment }} and injected into {{ .Args.namespace }}/{{ .Args.k8s_secret_name }}"
 ```
 
-### Ресурсы
+### Resources
 
 ```yaml
 resources:
@@ -139,17 +139,17 @@ resources:
     text: "Hello from yaml-mcp-server"
 ```
 
-## 🧪 Аппруверы
+## 🧪 Approvers
 
-Поддерживаются:
+Supported approvers:
 
-- `limits` — лимиты/валидации полей (regex, min/max, min/max length).
-- `shell` — approval по результату shell‑команды.
-- `http` — approval через внешний HTTP‑сервис.
+- `limits` — rate limits and field validation (regex, min/max, length).
+- `shell` — approval based on a shell command.
+- `http` — approval via external HTTP service.
 
-**Порядок строго как в YAML.** На первом `deny` цепочка прерывается.
+**Order is exactly as in YAML.** Chain stops on first `deny`.
 
-### HTTP‑approver: формат запроса
+### HTTP‑approver: request
 
 ```json
 {
@@ -164,15 +164,15 @@ resources:
 }
 ```
 
-### HTTP‑approver: формат ответа
+### HTTP‑approver: response
 
 ```json
 { "decision": "approve", "reason": "ok" }
 ```
 
-`decision` принимает ровно: `approve | deny | error`.
+`decision` is strictly one of: `approve | deny | error`.
 
-## 📡 Протокол ответов инструмента
+## 📡 Tool Response Protocol
 
 ```json
 {
@@ -183,36 +183,36 @@ resources:
 }
 ```
 
-## 🔧 Шаблонизация YAML
+## 🔧 YAML templating
 
-Поддерживаемые функции:
+Available template functions:
 
 - `env`, `envOr`, `default`, `ternary`, `join`, `lower`, `upper`, `trimPrefix`, `trimSuffix`, `replace`.
 
-Сервер проверяет, что все используемые env переменные заданы **до старта**.
+The server checks that all referenced env vars exist **before** startup.
 
 ## ❤️ Health endpoints
 
 - `GET /healthz` — liveness
 - `GET /readyz` — readiness
 
-## ⚙️ Переменные окружения
+## ⚙️ Environment Variables
 
-- `YAML_MCP_CONFIG` — путь к YAML конфигу (по умолчанию `config.yaml`).
+- `YAML_MCP_CONFIG` — path to YAML config (default `config.yaml`).
 - `YAML_MCP_LOG_LEVEL` — `debug|info|warn|error`.
-- `YAML_MCP_LANG` — `en` (default) или `ru`.
-- `YAML_MCP_SHUTDOWN_TIMEOUT` — таймаут graceful shutdown.
+- `YAML_MCP_LANG` — `en` (default) or `ru`.
+- `YAML_MCP_SHUTDOWN_TIMEOUT` — graceful shutdown timeout.
 
-## 📄 Примеры
+## 📄 Examples
 
 - `examples/secretcreator_shell.yaml`
 - `examples/secretcreator_shell_http.yaml`
 
-## 🧷 Заметки по безопасности
+## 🧷 Security notes
 
-`yaml-mcp-server` — это **универсальный MCP‑gateway**, который изолирует опасные действия от модели и даёт выполнять их
-только через явный approval. Пример с GitHub‑secret — лишь демонстрация подхода: модель не знает токенов и значений,
-но может инициировать создание через утверждённый поток.
+`yaml-mcp-server` is a **general MCP gateway** that isolates risky actions from the model and only allows execution
+through explicit approval. The GitHub secret flow is just an example: the model does not know tokens or secret values,
+but can request creation via an approved flow.
 
-Пока **нет встроенного разграничения прав доступа**. Поэтому сервис должен работать либо локально,
-либо в кластере с жёстким сетевым ограничением доступа к `yaml-mcp-server`.
+There is **no built-in access control yet**. Run the service either locally or in a cluster with strict network access
+restrictions to the `yaml-mcp-server`.
