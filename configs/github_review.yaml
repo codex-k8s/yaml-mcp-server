@@ -16,7 +16,7 @@ server:
     - timeout: "30s"
       command: |
         set -euo pipefail
-        printf %s "$CODEXCTL_GH_PAT" | gh auth login --with-token
+        printf %s "$YAML_MCP_GH_PAT" | gh auth login --with-token
   http:
     listen: ":8080"
     path: "/mcp"
@@ -38,7 +38,7 @@ tools:
       Optional:
       - correlation_id: stable id for idempotent responses.
       Notes:
-      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - Repository is fixed by server configuration.
       - The response payload is returned inside "reason" as JSON:
         {total, count, offset, next_offset, has_more, items}.
     annotations:
@@ -141,7 +141,7 @@ tools:
       Optional:
       - correlation_id: stable id for idempotent responses.
       Notes:
-      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - Repository is fixed by server configuration.
       - The response payload is returned inside "reason" as JSON.
     annotations:
       read_only_hint: true
@@ -211,11 +211,11 @@ tools:
       Replies to a review thread by comment_id and includes an automatic quote.
       Input fields:
       - comment_id: numeric review comment id to reply to.
-      - reply_text: response text in Russian, GitHub-flavored Markdown; keep line breaks.
+      - reply_text: response text in language "{{ envOr "YAML_MCP_LANG" "en" }}", GitHub-flavored Markdown; keep line breaks.
       Optional:
       - correlation_id: stable id for idempotent responses.
       Notes:
-      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - Repository is fixed by server configuration.
       - The tool always prepends a quoted original comment.
     annotations:
       read_only_hint: false
@@ -341,7 +341,7 @@ tools:
       Optional:
       - correlation_id: stable id for idempotent responses.
       Notes:
-      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - Repository is fixed by server configuration.
       - The response payload is returned inside "reason" as JSON.
     annotations:
       read_only_hint: true
@@ -396,8 +396,8 @@ tools:
       Optional:
       - correlation_id: stable id for idempotent responses.
       Notes:
-      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
-      - Returns only comments that are not minimized and not authored by CODEXCTL_GH_USERNAME.
+      - Repository is fixed by server configuration.
+      - Returns only comments that are not minimized and not authored by the current GitHub account.
       - The response payload is returned inside "reason" as JSON:
         {total, count, offset, next_offset, has_more, items}.
     annotations:
@@ -450,7 +450,7 @@ tools:
         owner="${repo%%/*}"
         name="${repo##*/}"
         pr_number="{{ .Args.pr_number }}"
-        current_user="{{ env "CODEXCTL_GH_USERNAME" }}"
+        current_user="{{ env "YAML_MCP_GH_USERNAME" }}"
         offset="{{ if .Args.offset }}{{ .Args.offset }}{{ else }}0{{ end }}"
         limit="{{ if .Args.limit }}{{ .Args.limit }}{{ else }}50{{ end }}"
         query="$(cat <<'EOF'
@@ -491,13 +491,13 @@ tools:
       Adds a comment to the PR conversation (issue comments).
       Input fields:
       - pr_number: pull request number.
-      - comment_text: comment text in Russian, GitHub-flavored Markdown; keep line breaks.
+      - comment_text: comment text in language "{{ envOr "YAML_MCP_LANG" "en" }}", GitHub-flavored Markdown; keep line breaks.
       Optional:
       - quote_comment_id: comment id to quote before the reply (only your own comment).
       - correlation_id: stable id for idempotent responses.
       Notes:
-      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
-      - Quoting is allowed only for comments authored by CODEXCTL_GH_USERNAME.
+      - Repository is fixed by server configuration.
+      - Quoting is allowed only for comments authored by the current GitHub account.
     annotations:
       read_only_hint: false
       destructive_hint: true
@@ -547,7 +547,7 @@ tools:
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
         pr_number="{{ .Args.pr_number }}"
-        current_user="{{ env "CODEXCTL_GH_USERNAME" }}"
+        current_user="{{ env "YAML_MCP_GH_USERNAME" }}"
         comment_text="${COMMENT_TEXT}"
         quote_id="{{ if .Args.quote_comment_id }}{{ .Args.quote_comment_id }}{{ end }}"
         if [ -n "$quote_id" ]; then
@@ -575,9 +575,9 @@ tools:
       Optional:
       - correlation_id: stable id for idempotent responses.
       Notes:
-      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - Repository is fixed by server configuration.
       - Body is replaced entirely; include all required sections.
-      - Allowed only for OPEN PRs authored by CODEXCTL_GH_USERNAME.
+      - Allowed only for OPEN PRs authored by the current GitHub account.
     annotations:
       read_only_hint: false
       destructive_hint: true
@@ -624,7 +624,7 @@ tools:
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
         pr_number="{{ .Args.pr_number }}"
-        current_user="{{ env "CODEXCTL_GH_USERNAME" }}"
+        current_user="{{ env "YAML_MCP_GH_USERNAME" }}"
         state="$(gh pr view "$pr_number" --repo "$repo" --json state --jq '.state')"
         author="$(gh pr view "$pr_number" --repo "$repo" --json author --jq '.author.login')"
         if [ "$state" != "OPEN" ]; then
@@ -650,7 +650,7 @@ tools:
       Optional:
       - correlation_id: stable id for idempotent responses.
       Notes:
-      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - Repository is fixed by server configuration.
       - Body is replaced entirely; include all required sections.
       - Editing someone else's issue is allowed only if explicitly requested by the user.
       - If you use planning hierarchy, keep the marker: AI-PLAN-PARENT: #<root>.
@@ -715,7 +715,7 @@ tools:
       Allowed labels: feature, bug, doc, debt, idea, epic.
       Notes:
       - All ai-* labels are preserved automatically.
-      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - Repository is fixed by server configuration.
       Optional:
       - correlation_id: stable id for idempotent responses.
     annotations:
@@ -837,7 +837,7 @@ tools:
       Optional:
       - correlation_id: stable id for idempotent responses.
       Notes:
-      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - Repository is fixed by server configuration.
       - The response payload is returned inside "reason" as JSON.
     annotations:
       read_only_hint: true
@@ -897,12 +897,12 @@ tools:
       Posts a clarification question to an Issue or PR.
       Input fields:
       - issue_number: issue or PR number.
-      - question_text: question text to post, GitHub-flavored Markdown; keep line breaks.
+      - question_text: question text in language "{{ envOr "YAML_MCP_LANG" "en" }}", GitHub-flavored Markdown; keep line breaks.
       Optional:
       - correlation_id: stable id for idempotent responses.
       Notes:
       - Use this when there are blockers or contradictions.
-      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - Repository is fixed by server configuration.
     annotations:
       read_only_hint: false
       destructive_hint: true
