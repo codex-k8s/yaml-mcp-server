@@ -249,9 +249,8 @@ resources:
 
 ## 📄 Примеры
 
-- `examples/secretcreator_shell.yaml`
-- `examples/secretcreator_shell_http.yaml`
-- `examples/psqldbcreator_shell_http.yaml`
+- `examples/combined_tools_shell_http.yaml`
+  (содержит два инструмента: GitHubSecretCreatorInK8s и PsqlDbCreatorInK8s)
 
 ## 🧷 Заметки по безопасности
 

@@ -249,9 +249,8 @@ The server checks that all referenced env vars exist **before** startup.
 
 ## 📄 Examples
 
-- `examples/secretcreator_shell.yaml`
-- `examples/secretcreator_shell_http.yaml`
-- `examples/psqldbcreator_shell_http.yaml`
+- `examples/combined_tools_shell_http.yaml`
+  (contains two tools: GitHubSecretCreatorInK8s and PsqlDbCreatorInK8s)
 
 ## 🧷 Security notes
 
