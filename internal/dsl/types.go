@@ -20,6 +20,8 @@ type ServerConfig struct {
 	Transport string `yaml:"transport"`
 	// ShutdownTimeout overrides graceful shutdown duration.
 	ShutdownTimeout string `yaml:"shutdown_timeout"`
+	// Idempotency configures optional response caching.
+	Idempotency IdempotencyConfig `yaml:"idempotency_cache"`
 	// StartupHooks defines one-time commands executed on start.
 	StartupHooks []HookConfig `yaml:"startup_hooks"`
 	// HTTP configures HTTP transport.
@@ -52,6 +54,8 @@ type ToolConfig struct {
 	Title string `yaml:"title"`
 	// Description explains the tool for the agent.
 	Description string `yaml:"description"`
+	// Annotations provides optional tool hints.
+	Annotations *ToolAnnotationsConfig `yaml:"annotations,omitempty"`
 	// RequiresApproval forces approval flow even if approvers are empty.
 	RequiresApproval bool `yaml:"requires_approval"`
 	// Timeout is the tool execution timeout.
@@ -60,6 +64,8 @@ type ToolConfig struct {
 	TimeoutMessage string `yaml:"timeout_message"`
 	// InputSchema defines JSON Schema for tool input.
 	InputSchema map[string]any `yaml:"input_schema"`
+	// OutputSchema defines JSON Schema for tool output.
+	OutputSchema map[string]any `yaml:"output_schema"`
 	// Executor describes how the tool is executed.
 	Executor ExecutorConfig `yaml:"executor"`
 	// Approvers lists approval steps to run.
@@ -154,4 +160,30 @@ type ResourceConfig struct {
 	MIMEType string `yaml:"mime_type"`
 	// Text is the static resource content.
 	Text string `yaml:"text"`
+}
+
+// IdempotencyConfig configures response caching for repeated tool calls.
+type IdempotencyConfig struct {
+	// Enabled toggles idempotency caching.
+	Enabled bool `yaml:"enabled"`
+	// TTL controls how long cached responses are kept.
+	TTL string `yaml:"ttl"`
+	// MaxEntries limits the cache size.
+	MaxEntries int `yaml:"max_entries"`
+	// KeyStrategy selects cache key strategy (correlation_id, arguments_hash, auto).
+	KeyStrategy string `yaml:"key_strategy"`
+}
+
+// ToolAnnotationsConfig defines tool behavior hints.
+type ToolAnnotationsConfig struct {
+	// ReadOnlyHint indicates a read-only tool.
+	ReadOnlyHint bool `yaml:"read_only_hint,omitempty"`
+	// DestructiveHint indicates the tool may be destructive.
+	DestructiveHint *bool `yaml:"destructive_hint,omitempty"`
+	// IdempotentHint indicates repeated calls have no additional effect.
+	IdempotentHint bool `yaml:"idempotent_hint,omitempty"`
+	// OpenWorldHint indicates interaction with external entities.
+	OpenWorldHint *bool `yaml:"open_world_hint,omitempty"`
+	// Title is an optional tool display title.
+	Title string `yaml:"title,omitempty"`
 }

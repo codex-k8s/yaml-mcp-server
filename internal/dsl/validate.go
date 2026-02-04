@@ -3,6 +3,7 @@ package dsl
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Validate applies defaults and verifies required fields.
@@ -24,6 +25,28 @@ func Validate(cfg *Config) error {
 	}
 	if cfg.Server.HTTP.Path == "" {
 		cfg.Server.HTTP.Path = "/mcp"
+	}
+	if cfg.Server.Idempotency.Enabled {
+		if cfg.Server.Idempotency.TTL == "" {
+			cfg.Server.Idempotency.TTL = "1h"
+		}
+		if cfg.Server.Idempotency.MaxEntries == 0 {
+			cfg.Server.Idempotency.MaxEntries = 1000
+		}
+		if cfg.Server.Idempotency.MaxEntries < 0 {
+			return fmt.Errorf("server.idempotency_cache.max_entries must be >= 0")
+		}
+		if _, err := time.ParseDuration(cfg.Server.Idempotency.TTL); err != nil {
+			return fmt.Errorf("server.idempotency_cache.ttl is invalid: %w", err)
+		}
+		if cfg.Server.Idempotency.KeyStrategy == "" {
+			cfg.Server.Idempotency.KeyStrategy = "auto"
+		}
+		switch strings.ToLower(strings.TrimSpace(cfg.Server.Idempotency.KeyStrategy)) {
+		case "auto", "correlation_id", "arguments_hash":
+		default:
+			return fmt.Errorf("server.idempotency_cache.key_strategy must be auto, correlation_id, or arguments_hash")
+		}
 	}
 
 	for i, hook := range cfg.Server.StartupHooks {

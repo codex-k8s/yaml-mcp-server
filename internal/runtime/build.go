@@ -16,6 +16,7 @@ import (
 	"github.com/codex-k8s/yaml-mcp-server/internal/audit"
 	"github.com/codex-k8s/yaml-mcp-server/internal/constants"
 	"github.com/codex-k8s/yaml-mcp-server/internal/dsl"
+	"github.com/codex-k8s/yaml-mcp-server/internal/idempotency"
 	"github.com/codex-k8s/yaml-mcp-server/internal/protocol"
 	"github.com/codex-k8s/yaml-mcp-server/internal/runtime/approver"
 	"github.com/codex-k8s/yaml-mcp-server/internal/runtime/executor"
@@ -31,6 +32,10 @@ type Builder struct {
 	Audit audit.Logger
 	// Templates provides localized messages.
 	Templates templates.Renderer
+	// Cache stores idempotent responses.
+	Cache *idempotency.Cache
+	// CacheKeyStrategy selects how cache keys are computed.
+	CacheKeyStrategy string
 }
 
 // Build creates an MCP server with tools and resources.
@@ -86,11 +91,19 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 		Title:       tool.Title,
 		Description: tool.Description,
 		InputSchema: tool.InputSchema,
+		OutputSchema: func() any {
+			if len(tool.OutputSchema) == 0 {
+				return nil
+			}
+			return tool.OutputSchema
+		}(),
+		Annotations: buildAnnotations(tool.Annotations),
 	}
 
 	mcp.AddTool(server, mcpTool, func(ctx context.Context, _ *mcp.CallToolRequest, input map[string]any) (*mcp.CallToolResult, protocol.ToolResponse, error) {
-		correlationID := correlationID(input)
+		correlationID, providedID := correlationID(input)
 		args := input
+		format := responseFormat(args)
 		redacted := security.RedactArguments(args)
 
 		if b.Logger != nil {
@@ -98,6 +111,30 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 		}
 		if b.Audit != nil {
 			b.Audit.Record(ctx, audit.Event{Type: "tool_call", Tool: tool.Name, CorrelationID: correlationID})
+		}
+
+		cacheKey := ""
+		if b.Cache != nil {
+			key, err := buildCacheKey(tool.Name, correlationID, providedID, args, b.CacheKeyStrategy)
+			if err != nil {
+				if b.Logger != nil {
+					b.Logger.Warn("cache key build failed", "tool", tool.Name, "error", err)
+				}
+			} else {
+				cacheKey = key
+			}
+		}
+		if b.Cache != nil && cacheKey != "" {
+			if cached, ok := b.Cache.Get(cacheKey); ok {
+				cached.CorrelationID = correlationID
+				if b.Logger != nil {
+					b.Logger.Info("tool cache hit", "tool", tool.Name, "correlation_id", correlationID)
+				}
+				if b.Audit != nil {
+					b.Audit.Record(ctx, audit.Event{Type: "cache_hit", Tool: tool.Name, CorrelationID: correlationID, Decision: cached.Decision, Reason: cached.Reason})
+				}
+				return nil, cached, nil
+			}
 		}
 
 		ctxTool := ctx
@@ -119,6 +156,7 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 				resp.Status = protocol.StatusDenied
 				resp.Decision = protocol.DecisionDeny
 				resp.Reason = "approval required but no approvers configured"
+				applyResponseFormat(format, &resp)
 				return nil, resp, nil
 			}
 			decision, err := chain.Approve(ctxTool, approver.Request{
@@ -131,6 +169,7 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 					resp.Status = protocol.StatusError
 					resp.Decision = protocol.DecisionError
 					resp.Reason = timeoutMessage(tool.TimeoutMessage)
+					applyResponseFormat(format, &resp)
 					return nil, resp, nil
 				}
 				resp.Status = protocol.StatusError
@@ -139,12 +178,14 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 				if b.Audit != nil {
 					b.Audit.Record(ctx, audit.Event{Type: "approval_error", Tool: tool.Name, CorrelationID: correlationID, Decision: protocol.DecisionError, Reason: err.Error()})
 				}
+				applyResponseFormat(format, &resp)
 				return nil, resp, nil
 			}
 			if errors.Is(ctxTool.Err(), context.DeadlineExceeded) {
 				resp.Status = protocol.StatusError
 				resp.Decision = protocol.DecisionError
 				resp.Reason = timeoutMessage(tool.TimeoutMessage)
+				applyResponseFormat(format, &resp)
 				return nil, resp, nil
 			}
 			if !decision.Allowed {
@@ -154,6 +195,7 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 				if b.Audit != nil {
 					b.Audit.Record(ctx, audit.Event{Type: "approval_denied", Tool: tool.Name, CorrelationID: correlationID, Decision: protocol.DecisionDeny, Reason: decision.Reason})
 				}
+				applyResponseFormat(format, &resp)
 				return nil, resp, nil
 			}
 			if b.Audit != nil {
@@ -171,6 +213,7 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 				resp.Status = protocol.StatusError
 				resp.Decision = protocol.DecisionError
 				resp.Reason = timeoutMessage(tool.TimeoutMessage)
+				applyResponseFormat(format, &resp)
 				return nil, resp, nil
 			}
 			resp.Status = protocol.StatusError
@@ -182,6 +225,7 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 			if b.Audit != nil {
 				b.Audit.Record(ctx, audit.Event{Type: "tool_error", Tool: tool.Name, CorrelationID: correlationID, Decision: protocol.DecisionError, Reason: resp.Reason})
 			}
+			applyResponseFormat(format, &resp)
 			return nil, resp, nil
 		}
 
@@ -189,12 +233,23 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 			resp.Status = protocol.StatusError
 			resp.Decision = protocol.DecisionError
 			resp.Reason = timeoutMessage(tool.TimeoutMessage)
+			applyResponseFormat(format, &resp)
 			return nil, resp, nil
 		}
 
 		resp.Reason = output
+		applyResponseFormat(format, &resp)
 		if b.Audit != nil {
 			b.Audit.Record(ctx, audit.Event{Type: "tool_ok", Tool: tool.Name, CorrelationID: correlationID, Decision: protocol.DecisionApprove, Reason: output})
+		}
+		if b.Cache != nil && cacheKey != "" && resp.Status != protocol.StatusError {
+			b.Cache.Set(cacheKey, resp)
+			if b.Logger != nil {
+				b.Logger.Info("tool response cached", "tool", tool.Name, "correlation_id", correlationID)
+			}
+			if b.Audit != nil {
+				b.Audit.Record(ctx, audit.Event{Type: "cache_store", Tool: tool.Name, CorrelationID: correlationID, Decision: resp.Decision, Reason: resp.Reason})
+			}
 		}
 		return nil, resp, nil
 	})
@@ -297,16 +352,63 @@ func timeoutMessage(value string) string {
 	return value
 }
 
-func correlationID(args map[string]any) string {
+func buildAnnotations(cfg *dsl.ToolAnnotationsConfig) *mcp.ToolAnnotations {
+	if cfg == nil {
+		return nil
+	}
+	return &mcp.ToolAnnotations{
+		ReadOnlyHint:    cfg.ReadOnlyHint,
+		DestructiveHint: cfg.DestructiveHint,
+		IdempotentHint:  cfg.IdempotentHint,
+		OpenWorldHint:   cfg.OpenWorldHint,
+		Title:           cfg.Title,
+	}
+}
+
+func correlationID(args map[string]any) (string, bool) {
 	if args != nil {
 		if raw, ok := args["correlation_id"].(string); ok && raw != "" {
-			return raw
+			return raw, true
 		}
 		if raw, ok := args["request_id"].(string); ok && raw != "" {
-			return raw
+			return raw, true
 		}
 	}
-	return newCorrelationID()
+	return newCorrelationID(), false
+}
+
+func responseFormat(args map[string]any) string {
+	if args == nil {
+		return ""
+	}
+	raw, ok := args["response_format"]
+	if !ok {
+		return ""
+	}
+	switch v := raw.(type) {
+	case string:
+		return strings.ToLower(strings.TrimSpace(v))
+	default:
+		return strings.ToLower(strings.TrimSpace(fmt.Sprint(v)))
+	}
+}
+
+func applyResponseFormat(format string, resp *protocol.ToolResponse) {
+	if resp == nil {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "", "json":
+		return
+	case "markdown":
+		message := strings.TrimSpace(resp.Reason)
+		if message == "" {
+			message = "no details"
+		}
+		resp.Reason = fmt.Sprintf("**status**: %s\n**decision**: %s\n\n%s", resp.Status, resp.Decision, message)
+	default:
+		return
+	}
 }
 
 func newCorrelationID() string {

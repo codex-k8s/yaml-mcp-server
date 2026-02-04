@@ -27,7 +27,15 @@ var sensitiveSubstrings = []string{
 }
 
 var allowList = map[string]struct{}{
-	"secret_name": {},
+	"secret_name":                 {},
+	"k8s_secret_name":             {},
+	"k8s_pg_user_secret_name":     {},
+	"k8s_pg_password_secret_name": {},
+	"pg_user_secret_name":         {},
+	"pg_password_secret_name":     {},
+	"namespace":                   {},
+	"db_name":                     {},
+	"justification":               {},
 }
 
 // RedactArguments returns a copy of arguments with sensitive values replaced.

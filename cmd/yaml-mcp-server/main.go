@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/codex-k8s/yaml-mcp-server/internal/audit"
 	"github.com/codex-k8s/yaml-mcp-server/internal/config"
 	"github.com/codex-k8s/yaml-mcp-server/internal/dsl"
+	"github.com/codex-k8s/yaml-mcp-server/internal/idempotency"
 	"github.com/codex-k8s/yaml-mcp-server/internal/log"
 	"github.com/codex-k8s/yaml-mcp-server/internal/render"
 	"github.com/codex-k8s/yaml-mcp-server/internal/runtime"
@@ -49,10 +51,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	var cache *idempotency.Cache
+	if dslCfg.Server.Idempotency.Enabled {
+		ttl, err := time.ParseDuration(dslCfg.Server.Idempotency.TTL)
+		if err != nil {
+			logger.Error("invalid idempotency ttl", "error", err)
+			os.Exit(1)
+		}
+		cache = idempotency.NewCache(ttl, dslCfg.Server.Idempotency.MaxEntries)
+	}
+
 	builder := runtime.Builder{
-		Logger:    logger,
-		Audit:     audit.New(logger),
-		Templates: templateBundle,
+		Logger:           logger,
+		Audit:            audit.New(logger),
+		Templates:        templateBundle,
+		Cache:            cache,
+		CacheKeyStrategy: dslCfg.Server.Idempotency.KeyStrategy,
 	}
 	server, err := builder.Build(dslCfg)
 	if err != nil {
