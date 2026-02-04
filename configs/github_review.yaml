@@ -90,9 +90,9 @@ tools:
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
         owner="${repo%%/*}"
         name="${repo##*/}"
-        pr_number="{{ .Args.pr_number }}"
-        offset="{{ if .Args.offset }}{{ .Args.offset }}{{ else }}0{{ end }}"
-        limit="{{ if .Args.limit }}{{ .Args.limit }}{{ else }}50{{ end }}"
+        pr_number="{{ "{{ .Args.pr_number }}" }}"
+        offset="{{ "{{ if .Args.offset }}{{ .Args.offset }}{{ else }}0{{ end }}" }}"
+        limit="{{ "{{ if .Args.limit }}{{ .Args.limit }}{{ else }}50{{ end }}" }}"
         query="$(cat <<'EOF'
         query($owner:String!, $name:String!, $number:Int!) {
           repository(owner:$owner, name:$name) {
@@ -182,7 +182,7 @@ tools:
       timeout: "5m"
       command: |
         set -euo pipefail
-        thread_id="{{ .Args.thread_id }}"
+        thread_id="{{ "{{ .Args.thread_id }}" }}"
         query="$(cat <<'EOF'
         query($id:ID!) {
           node(id:$id) {
@@ -258,11 +258,11 @@ tools:
       type: shell
       timeout: "5m"
       env:
-        REPLY_TEXT: '{{ .Args.reply_text }}'
+        REPLY_TEXT: '{{ "{{ .Args.reply_text }}" }}'
       command: |
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
-        comment_id="{{ .Args.comment_id }}"
+        comment_id="{{ "{{ .Args.comment_id }}" }}"
         reply_text="${REPLY_TEXT}"
         original="$(gh api "repos/$repo/pulls/comments/$comment_id" --jq '.body')"
         quoted="$(printf '%s\n' "$original" | sed 's/^/> /')"
@@ -319,7 +319,7 @@ tools:
       timeout: "5m"
       command: |
         set -euo pipefail
-        thread_id="{{ .Args.thread_id }}"
+        thread_id="{{ "{{ .Args.thread_id }}" }}"
         query="$(cat <<'EOF'
         mutation($threadId:ID!) {
           resolveReviewThread(input: {threadId: $threadId}) {
@@ -383,7 +383,7 @@ tools:
       command: |
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
-        pr_number="{{ .Args.pr_number }}"
+        pr_number="{{ "{{ .Args.pr_number }}" }}"
         gh pr view "$pr_number" --repo "$repo" --json number,title,state,url,body,headRefName,baseRefName,author,isDraft,mergeable,labels --jq '{number: .number, title: .title, state: .state, url: .url, body: .body, head_ref: .headRefName, base_ref: .baseRefName, author: .author.login, is_draft: .isDraft, mergeable: .mergeable, labels: [.labels[].name]}'
   - name: github_pr_list_issue_comments
     title: "List PR issue comments"
@@ -449,10 +449,10 @@ tools:
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
         owner="${repo%%/*}"
         name="${repo##*/}"
-        pr_number="{{ .Args.pr_number }}"
+        pr_number="{{ "{{ .Args.pr_number }}" }}"
         current_user="{{ env "YAML_MCP_GH_USERNAME" }}"
-        offset="{{ if .Args.offset }}{{ .Args.offset }}{{ else }}0{{ end }}"
-        limit="{{ if .Args.limit }}{{ .Args.limit }}{{ else }}50{{ end }}"
+        offset="{{ "{{ if .Args.offset }}{{ .Args.offset }}{{ else }}0{{ end }}" }}"
+        limit="{{ "{{ if .Args.limit }}{{ .Args.limit }}{{ else }}50{{ end }}" }}"
         query="$(cat <<'EOF'
         query($owner:String!, $name:String!, $number:Int!, $endCursor:String) {
           repository(owner:$owner, name:$name) {
@@ -542,14 +542,14 @@ tools:
       type: shell
       timeout: "5m"
       env:
-        COMMENT_TEXT: '{{ .Args.comment_text }}'
+        COMMENT_TEXT: '{{ "{{ .Args.comment_text }}" }}'
       command: |
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
-        pr_number="{{ .Args.pr_number }}"
+        pr_number="{{ "{{ .Args.pr_number }}" }}"
         current_user="{{ env "YAML_MCP_GH_USERNAME" }}"
         comment_text="${COMMENT_TEXT}"
-        quote_id="{{ if .Args.quote_comment_id }}{{ .Args.quote_comment_id }}{{ end }}"
+        quote_id="{{ "{{ if .Args.quote_comment_id }}{{ .Args.quote_comment_id }}{{ end }}" }}"
         if [ -n "$quote_id" ]; then
           author="$(gh api "repos/$repo/issues/comments/$quote_id" --jq '.user.login')"
           if [ "$author" != "$current_user" ]; then
@@ -619,11 +619,11 @@ tools:
       type: shell
       timeout: "5m"
       env:
-        PR_BODY: '{{ .Args.body }}'
+        PR_BODY: '{{ "{{ .Args.body }}" }}'
       command: |
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
-        pr_number="{{ .Args.pr_number }}"
+        pr_number="{{ "{{ .Args.pr_number }}" }}"
         current_user="{{ env "YAML_MCP_GH_USERNAME" }}"
         state="$(gh pr view "$pr_number" --repo "$repo" --json state --jq '.state')"
         author="$(gh pr view "$pr_number" --repo "$repo" --json author --jq '.author.login')"
@@ -695,11 +695,11 @@ tools:
       type: shell
       timeout: "5m"
       env:
-        ISSUE_BODY: '{{ .Args.body }}'
+        ISSUE_BODY: '{{ "{{ .Args.body }}" }}'
       command: |
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
-        issue_number="{{ .Args.issue_number }}"
+        issue_number="{{ "{{ .Args.issue_number }}" }}"
         tmp="$(mktemp)"
         printf '%s' "$ISSUE_BODY" | jq -Rs '{body: .}' > "$tmp"
         gh api -X PATCH "repos/$repo/issues/$issue_number" --input "$tmp" >/dev/null
@@ -744,7 +744,7 @@ tools:
         timeout: "1m"
         command: |
           set -euo pipefail
-          labels_csv="{{ .Args.labels_csv }}"
+          labels_csv="{{ "{{ .Args.labels_csv }}" }}"
           if [ -n "$labels_csv" ]; then
             IFS=',' read -r -a labels <<< "$labels_csv"
             for label in "${labels[@]}"; do
@@ -781,11 +781,11 @@ tools:
       type: shell
       timeout: "5m"
       env:
-        LABELS_CSV: '{{ .Args.labels_csv }}'
+        LABELS_CSV: '{{ "{{ .Args.labels_csv }}" }}'
       command: |
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
-        pr_number="{{ .Args.pr_number }}"
+        pr_number="{{ "{{ .Args.pr_number }}" }}"
         labels_csv="${LABELS_CSV}"
         declare -a new_labels
         if [ -n "$labels_csv" ]; then
@@ -886,9 +886,9 @@ tools:
       command: |
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
-        query="{{ .Args.query }}"
-        page="{{ if .Args.page }}{{ .Args.page }}{{ else }}1{{ end }}"
-        per_page="{{ if .Args.per_page }}{{ .Args.per_page }}{{ else }}20{{ end }}"
+        query="{{ "{{ .Args.query }}" }}"
+        page="{{ "{{ if .Args.page }}{{ .Args.page }}{{ else }}1{{ end }}" }}"
+        per_page="{{ "{{ if .Args.per_page }}{{ .Args.per_page }}{{ else }}20{{ end }}" }}"
         full_query="repo:$repo $query"
         gh api "search/issues" -f q="$full_query" -F page="$page" -F per_page="$per_page" --jq '{total: .total_count, items: [.items[] | {number: .number, title: .title, state: .state, url: .html_url, labels: [.labels[].name], updated_at: .updated_at, author: .user.login, is_pr: (.pull_request != null)}] }'
   - name: github_ask_question
@@ -944,11 +944,11 @@ tools:
       type: shell
       timeout: "5m"
       env:
-        QUESTION_TEXT: '{{ .Args.question_text }}'
+        QUESTION_TEXT: '{{ "{{ .Args.question_text }}" }}'
       command: |
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
-        issue_number="{{ .Args.issue_number }}"
+        issue_number="{{ "{{ .Args.issue_number }}" }}"
         tmp="$(mktemp)"
         printf '%s' "$QUESTION_TEXT" | jq -Rs '{body: .}' > "$tmp"
         gh api -X POST "repos/$repo/issues/$issue_number/comments" --input "$tmp" >/dev/null
