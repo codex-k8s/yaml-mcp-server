@@ -37,7 +37,6 @@ tools:
       - limit: optional page size (default: 50).
       Optional:
       - correlation_id: stable id for idempotent responses.
-      - response_format: json or markdown (default: json).
       Notes:
       - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
       - The response payload is returned inside "reason" as JSON:
@@ -58,9 +57,6 @@ tools:
       properties:
         correlation_id:
           type: string
-        response_format:
-          type: string
-          enum: ["json", "markdown"]
         pr_number:
           type: integer
           minimum: 1
@@ -144,7 +140,6 @@ tools:
       - thread_id: review thread id from github_review_list_threads.
       Optional:
       - correlation_id: stable id for idempotent responses.
-      - response_format: json or markdown (default: json).
       Notes:
       - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
       - The response payload is returned inside "reason" as JSON.
@@ -164,9 +159,6 @@ tools:
       properties:
         correlation_id:
           type: string
-        response_format:
-          type: string
-          enum: ["json", "markdown"]
         thread_id:
           type: string
           minLength: 1
@@ -219,10 +211,9 @@ tools:
       Replies to a review thread by comment_id and includes an automatic quote.
       Input fields:
       - comment_id: numeric review comment id to reply to.
-      - reply_text: response text; write in Russian.
+      - reply_text: response text in Russian, GitHub-flavored Markdown; keep line breaks.
       Optional:
       - correlation_id: stable id for idempotent responses.
-      - response_format: json or markdown (default: json).
       Notes:
       - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
       - The tool always prepends a quoted original comment.
@@ -242,9 +233,6 @@ tools:
       properties:
         correlation_id:
           type: string
-        response_format:
-          type: string
-          enum: ["json", "markdown"]
         comment_id:
           type: integer
           minimum: 1
@@ -279,7 +267,10 @@ tools:
         original="$(gh api "repos/$repo/pulls/comments/$comment_id" --jq '.body')"
         quoted="$(printf '%s\n' "$original" | sed 's/^/> /')"
         body="$(printf "%s\n\n%s" "$quoted" "$reply_text")"
-        gh api -X POST "repos/$repo/pulls/comments/$comment_id/replies" -f body="$body" >/dev/null
+        tmp="$(mktemp)"
+        printf '%s' "$body" | jq -Rs '{body: .}' > "$tmp"
+        gh api -X POST "repos/$repo/pulls/comments/$comment_id/replies" --input "$tmp" >/dev/null
+        rm -f "$tmp"
         echo "replied to review comment $comment_id"
   - name: github_review_resolve_thread
     title: "Resolve review thread"
@@ -289,7 +280,6 @@ tools:
       - thread_id: review thread id from github_review_list_threads.
       Optional:
       - correlation_id: stable id for idempotent responses.
-      - response_format: json or markdown (default: json).
     annotations:
       read_only_hint: false
       destructive_hint: true
@@ -306,9 +296,6 @@ tools:
       properties:
         correlation_id:
           type: string
-        response_format:
-          type: string
-          enum: ["json", "markdown"]
         thread_id:
           type: string
           minLength: 1
@@ -353,7 +340,6 @@ tools:
       - pr_number: pull request number.
       Optional:
       - correlation_id: stable id for idempotent responses.
-      - response_format: json or markdown (default: json).
       Notes:
       - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
       - The response payload is returned inside "reason" as JSON.
@@ -373,9 +359,6 @@ tools:
       properties:
         correlation_id:
           type: string
-        response_format:
-          type: string
-          enum: ["json", "markdown"]
         pr_number:
           type: integer
           minimum: 1
@@ -412,9 +395,9 @@ tools:
       - limit: optional page size (default: 50).
       Optional:
       - correlation_id: stable id for idempotent responses.
-      - response_format: json or markdown (default: json).
       Notes:
       - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - Returns only comments that are not minimized and not authored by CODEXCTL_GH_USERNAME.
       - The response payload is returned inside "reason" as JSON:
         {total, count, offset, next_offset, has_more, items}.
     annotations:
@@ -433,9 +416,6 @@ tools:
       properties:
         correlation_id:
           type: string
-        response_format:
-          type: string
-          enum: ["json", "markdown"]
         pr_number:
           type: integer
           minimum: 1
@@ -467,10 +447,34 @@ tools:
       command: |
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
+        owner="${repo%%/*}"
+        name="${repo##*/}"
         pr_number="{{ .Args.pr_number }}"
+        current_user="{{ env "CODEXCTL_GH_USERNAME" }}"
         offset="{{ if .Args.offset }}{{ .Args.offset }}{{ else }}0{{ end }}"
         limit="{{ if .Args.limit }}{{ .Args.limit }}{{ else }}50{{ end }}"
-        lines="$(gh api "repos/$repo/issues/$pr_number/comments?per_page=100" --paginate --jq '.[] | {comment_id: .id, author: .user.login, body: .body, url: .html_url, created_at: .created_at}')"
+        query="$(cat <<'EOF'
+        query($owner:String!, $name:String!, $number:Int!, $endCursor:String) {
+          repository(owner:$owner, name:$name) {
+            pullRequest(number:$number) {
+              comments(first: 100, after: $endCursor) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  databaseId
+                  body
+                  author { login }
+                  url
+                  createdAt
+                  isMinimized
+                }
+              }
+            }
+          }
+        }
+        EOF
+        )"
+        jq_filter=".data.repository.pullRequest.comments.nodes[] | select(.isMinimized==false) | select((.author.login // \"\") != \"$current_user\") | {comment_id: .databaseId, author: (.author.login // \"\"), body: .body, url: .url, created_at: .createdAt}"
+        lines="$(gh api graphql --paginate -f query="$query" -F owner="$owner" -F name="$name" -F number="$pr_number" --jq "$jq_filter")"
         total="$(printf '%s\n' "$lines" | awk 'NF{count++} END{print count+0}')"
         selected="$(printf '%s\n' "$lines" | awk -v off="$offset" -v lim="$limit" 'NF{count++; if (count>off && count<=off+lim) print}')"
         count="$(printf '%s\n' "$selected" | awk 'NF{count++} END{print count+0}')"
@@ -487,13 +491,13 @@ tools:
       Adds a comment to the PR conversation (issue comments).
       Input fields:
       - pr_number: pull request number.
-      - comment_text: comment text; write in Russian.
+      - comment_text: comment text in Russian, GitHub-flavored Markdown; keep line breaks.
       Optional:
-      - quote_comment_id: comment id to quote before the reply.
+      - quote_comment_id: comment id to quote before the reply (only your own comment).
       - correlation_id: stable id for idempotent responses.
-      - response_format: json or markdown (default: json).
       Notes:
       - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - Quoting is allowed only for comments authored by CODEXCTL_GH_USERNAME.
     annotations:
       read_only_hint: false
       destructive_hint: true
@@ -510,9 +514,6 @@ tools:
       properties:
         correlation_id:
           type: string
-        response_format:
-          type: string
-          enum: ["json", "markdown"]
         pr_number:
           type: integer
           minimum: 1
@@ -546,14 +547,23 @@ tools:
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
         pr_number="{{ .Args.pr_number }}"
+        current_user="{{ env "CODEXCTL_GH_USERNAME" }}"
         comment_text="${COMMENT_TEXT}"
         quote_id="{{ if .Args.quote_comment_id }}{{ .Args.quote_comment_id }}{{ end }}"
         if [ -n "$quote_id" ]; then
+          author="$(gh api "repos/$repo/issues/comments/$quote_id" --jq '.user.login')"
+          if [ "$author" != "$current_user" ]; then
+            echo "quote_comment_id must belong to $current_user"
+            exit 1
+          fi
           original="$(gh api "repos/$repo/issues/comments/$quote_id" --jq '.body')"
           quoted="$(printf '%s\n' "$original" | sed 's/^/> /')"
           comment_text="$(printf "%s\n\n%s" "$quoted" "$comment_text")"
         fi
-        gh api -X POST "repos/$repo/issues/$pr_number/comments" -f body="$comment_text" >/dev/null
+        tmp="$(mktemp)"
+        printf '%s' "$comment_text" | jq -Rs '{body: .}' > "$tmp"
+        gh api -X POST "repos/$repo/issues/$pr_number/comments" --input "$tmp" >/dev/null
+        rm -f "$tmp"
         echo "comment added to PR $pr_number"
   - name: github_pr_update_body
     title: "Overwrite PR body"
@@ -561,13 +571,13 @@ tools:
       Overwrites the PR body completely.
       Input fields:
       - pr_number: pull request number.
-      - body: full PR body (entire content).
+      - body: full PR body (entire content), GitHub-flavored Markdown; keep line breaks.
       Optional:
       - correlation_id: stable id for idempotent responses.
-      - response_format: json or markdown (default: json).
       Notes:
       - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
       - Body is replaced entirely; include all required sections.
+      - Allowed only for OPEN PRs authored by CODEXCTL_GH_USERNAME.
     annotations:
       read_only_hint: false
       destructive_hint: true
@@ -584,9 +594,6 @@ tools:
       properties:
         correlation_id:
           type: string
-        response_format:
-          type: string
-          enum: ["json", "markdown"]
         pr_number:
           type: integer
           minimum: 1
@@ -617,7 +624,21 @@ tools:
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
         pr_number="{{ .Args.pr_number }}"
-        gh api -X PATCH "repos/$repo/pulls/$pr_number" -f body="$PR_BODY" >/dev/null
+        current_user="{{ env "CODEXCTL_GH_USERNAME" }}"
+        state="$(gh pr view "$pr_number" --repo "$repo" --json state --jq '.state')"
+        author="$(gh pr view "$pr_number" --repo "$repo" --json author --jq '.author.login')"
+        if [ "$state" != "OPEN" ]; then
+          echo "PR is not open"
+          exit 1
+        fi
+        if [ "$author" != "$current_user" ]; then
+          echo "PR author must be $current_user"
+          exit 1
+        fi
+        tmp="$(mktemp)"
+        printf '%s' "$PR_BODY" | jq -Rs '{body: .}' > "$tmp"
+        gh api -X PATCH "repos/$repo/pulls/$pr_number" --input "$tmp" >/dev/null
+        rm -f "$tmp"
         echo "PR body updated for $pr_number"
   - name: github_issue_update_body
     title: "Overwrite issue body"
@@ -625,13 +646,13 @@ tools:
       Overwrites the issue body completely.
       Input fields:
       - issue_number: issue number.
-      - body: full issue body (entire content).
+      - body: full issue body (entire content), GitHub-flavored Markdown; keep line breaks.
       Optional:
       - correlation_id: stable id for idempotent responses.
-      - response_format: json or markdown (default: json).
       Notes:
       - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
       - Body is replaced entirely; include all required sections.
+      - Editing someone else's issue is allowed only if explicitly requested by the user.
       - If you use planning hierarchy, keep the marker: AI-PLAN-PARENT: #<root>.
     annotations:
       read_only_hint: false
@@ -649,9 +670,6 @@ tools:
       properties:
         correlation_id:
           type: string
-        response_format:
-          type: string
-          enum: ["json", "markdown"]
         issue_number:
           type: integer
           minimum: 1
@@ -682,7 +700,10 @@ tools:
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
         issue_number="{{ .Args.issue_number }}"
-        gh api -X PATCH "repos/$repo/issues/$issue_number" -f body="$ISSUE_BODY" >/dev/null
+        tmp="$(mktemp)"
+        printf '%s' "$ISSUE_BODY" | jq -Rs '{body: .}' > "$tmp"
+        gh api -X PATCH "repos/$repo/issues/$issue_number" --input "$tmp" >/dev/null
+        rm -f "$tmp"
         echo "issue body updated for $issue_number"
   - name: github_pr_set_labels
     title: "Set PR semantic labels"
@@ -697,7 +718,6 @@ tools:
       - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
       Optional:
       - correlation_id: stable id for idempotent responses.
-      - response_format: json or markdown (default: json).
     annotations:
       read_only_hint: false
       destructive_hint: true
@@ -714,14 +734,34 @@ tools:
       properties:
         correlation_id:
           type: string
-        response_format:
-          type: string
-          enum: ["json", "markdown"]
         pr_number:
           type: integer
           minimum: 1
         labels_csv:
           type: string
+    approvers:
+      - type: shell
+        timeout: "1m"
+        command: |
+          set -euo pipefail
+          labels_csv="{{ .Args.labels_csv }}"
+          if [ -n "$labels_csv" ]; then
+            IFS=',' read -r -a labels <<< "$labels_csv"
+            for label in "${labels[@]}"; do
+              label="$(echo "$label" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+              if [ -z "$label" ]; then
+                continue
+              fi
+              case "$label" in
+                feature|bug|doc|debt|idea|epic) ;;
+                *)
+                  echo "label not allowed: $label"
+                  exit 1
+                  ;;
+              esac
+            done
+          fi
+          exit 0
     output_schema:
       type: object
       additionalProperties: false
@@ -747,7 +787,6 @@ tools:
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
         pr_number="{{ .Args.pr_number }}"
         labels_csv="${LABELS_CSV}"
-        allowed_re="^(feature|bug|doc|debt|idea|epic)$"
         declare -a new_labels
         if [ -n "$labels_csv" ]; then
           IFS=',' read -r -a labels <<< "$labels_csv"
@@ -755,10 +794,6 @@ tools:
             label="$(echo "$label" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
             if [ -z "$label" ]; then
               continue
-            fi
-            if ! [[ "$label" =~ $allowed_re ]]; then
-              echo "label not allowed: $label"
-              exit 1
             fi
             new_labels+=("$label")
           done
@@ -801,7 +836,6 @@ tools:
       - per_page: optional page size (default: 20, max: 100).
       Optional:
       - correlation_id: stable id for idempotent responses.
-      - response_format: json or markdown (default: json).
       Notes:
       - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
       - The response payload is returned inside "reason" as JSON.
@@ -821,9 +855,6 @@ tools:
       properties:
         correlation_id:
           type: string
-        response_format:
-          type: string
-          enum: ["json", "markdown"]
         query:
           type: string
           minLength: 1
@@ -866,10 +897,9 @@ tools:
       Posts a clarification question to an Issue or PR.
       Input fields:
       - issue_number: issue or PR number.
-      - question_text: question text to post.
+      - question_text: question text to post, GitHub-flavored Markdown; keep line breaks.
       Optional:
       - correlation_id: stable id for idempotent responses.
-      - response_format: json or markdown (default: json).
       Notes:
       - Use this when there are blockers or contradictions.
       - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
@@ -889,9 +919,6 @@ tools:
       properties:
         correlation_id:
           type: string
-        response_format:
-          type: string
-          enum: ["json", "markdown"]
         issue_number:
           type: integer
           minimum: 1
@@ -922,5 +949,8 @@ tools:
         set -euo pipefail
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
         issue_number="{{ .Args.issue_number }}"
-        gh api -X POST "repos/$repo/issues/$issue_number/comments" -f body="$QUESTION_TEXT" >/dev/null
+        tmp="$(mktemp)"
+        printf '%s' "$QUESTION_TEXT" | jq -Rs '{body: .}' > "$tmp"
+        gh api -X POST "repos/$repo/issues/$issue_number/comments" --input "$tmp" >/dev/null
+        rm -f "$tmp"
         echo "question posted to $issue_number"
