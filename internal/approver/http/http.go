@@ -12,7 +12,6 @@ import (
 
 	"github.com/codex-k8s/yaml-mcp-server/internal/protocol"
 	"github.com/codex-k8s/yaml-mcp-server/internal/runtime/approver"
-	"github.com/codex-k8s/yaml-mcp-server/internal/security"
 )
 
 // Client calls external HTTP approvers.
@@ -56,7 +55,7 @@ func (c Client) Approve(ctx context.Context, req approver.Request) (approver.Dec
 	payload := Request{
 		CorrelationID: req.CorrelationID,
 		Tool:          req.ToolName,
-		Arguments:     security.RedactArguments(req.Arguments),
+		Arguments:     req.Arguments,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

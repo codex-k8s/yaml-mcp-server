@@ -9,25 +9,27 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/codex-k8s/yaml-mcp-server/internal/constants"
 )
 
 func buildCacheKey(toolName, correlationID string, providedID bool, args map[string]any, strategy string) (string, error) {
 	keyStrategy := strings.ToLower(strings.TrimSpace(strategy))
 	if keyStrategy == "" {
-		keyStrategy = "auto"
+		keyStrategy = constants.CacheKeyStrategyAuto
 	}
 
 	var key string
 	switch keyStrategy {
-	case "correlation_id":
+	case constants.CacheKeyStrategyCorrelationID:
 		key = correlationID
-	case "arguments_hash":
+	case constants.CacheKeyStrategyArgumentsHash:
 		hash, err := hashArguments(args)
 		if err != nil {
 			return "", err
 		}
 		key = hash
-	case "auto":
+	case constants.CacheKeyStrategyAuto:
 		if providedID && correlationID != "" {
 			key = correlationID
 		} else {

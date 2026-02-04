@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/codex-k8s/yaml-mcp-server/internal/constants"
 )
 
 // Validate applies defaults and verifies required fields.
@@ -40,10 +42,10 @@ func Validate(cfg *Config) error {
 			return fmt.Errorf("server.idempotency_cache.ttl is invalid: %w", err)
 		}
 		if cfg.Server.Idempotency.KeyStrategy == "" {
-			cfg.Server.Idempotency.KeyStrategy = "auto"
+			cfg.Server.Idempotency.KeyStrategy = constants.CacheKeyStrategyAuto
 		}
 		switch strings.ToLower(strings.TrimSpace(cfg.Server.Idempotency.KeyStrategy)) {
-		case "auto", "correlation_id", "arguments_hash":
+		case constants.CacheKeyStrategyAuto, constants.CacheKeyStrategyCorrelationID, constants.CacheKeyStrategyArgumentsHash:
 		default:
 			return fmt.Errorf("server.idempotency_cache.key_strategy must be auto, correlation_id, or arguments_hash")
 		}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/codex-k8s/yaml-mcp-server/configs"
 	"github.com/codex-k8s/yaml-mcp-server/internal/app"
 	"github.com/codex-k8s/yaml-mcp-server/internal/audit"
 	"github.com/codex-k8s/yaml-mcp-server/internal/config"
@@ -25,6 +27,9 @@ import (
 )
 
 func main() {
+	embeddedConfig := flag.String("embedded-config", "", "Use embedded config from configs/ (filename)")
+	flag.Parse()
+
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config error: %v\n", err)
@@ -33,7 +38,17 @@ func main() {
 
 	logger := log.New(cfg.LogLevel)
 
-	rendered, err := render.RenderFile(cfg.ConfigPath)
+	var rendered []byte
+	if embeddedConfig != nil && *embeddedConfig != "" {
+		raw, err := configs.Load(*embeddedConfig)
+		if err != nil {
+			logger.Error("load embedded config failed", "error", err)
+			os.Exit(1)
+		}
+		rendered, err = render.RenderBytes(*embeddedConfig, raw)
+	} else {
+		rendered, err = render.RenderFile(cfg.ConfigPath)
+	}
 	if err != nil {
 		logger.Error("render config failed", "error", err)
 		os.Exit(1)

@@ -20,7 +20,6 @@ import (
 	"github.com/codex-k8s/yaml-mcp-server/internal/protocol"
 	"github.com/codex-k8s/yaml-mcp-server/internal/runtime/approver"
 	"github.com/codex-k8s/yaml-mcp-server/internal/runtime/executor"
-	"github.com/codex-k8s/yaml-mcp-server/internal/security"
 	"github.com/codex-k8s/yaml-mcp-server/internal/templates"
 )
 
@@ -104,10 +103,8 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 		correlationID, providedID := correlationID(input)
 		args := input
 		format := responseFormat(args)
-		redacted := security.RedactArguments(args)
-
 		if b.Logger != nil {
-			b.Logger.Info("tool call", "tool", tool.Name, "correlation_id", correlationID, "args", redacted)
+			b.Logger.Info("tool call", "tool", tool.Name, "correlation_id", correlationID, "args", args)
 		}
 		if b.Audit != nil {
 			b.Audit.Record(ctx, audit.Event{Type: "tool_call", Tool: tool.Name, CorrelationID: correlationID})

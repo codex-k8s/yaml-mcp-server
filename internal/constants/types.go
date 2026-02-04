@@ -11,3 +11,10 @@ const (
 	ApproverShell  = "shell"
 	ApproverLimits = "limits"
 )
+
+// Idempotency cache key strategies.
+const (
+	CacheKeyStrategyAuto          = "auto"
+	CacheKeyStrategyCorrelationID = "correlation_id"
+	CacheKeyStrategyArgumentsHash = "arguments_hash"
+)

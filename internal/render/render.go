@@ -44,8 +44,17 @@ func RenderFile(path string) ([]byte, error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
+	return RenderBytes(path, raw)
+}
+
+// RenderBytes renders a YAML template from raw bytes.
+func RenderBytes(name string, raw []byte) ([]byte, error) {
 	tracker := &EnvTracker{}
-	tmpl, err := template.New("config").Funcs(FuncMap(tracker)).Option("missingkey=error").Parse(string(raw))
+	templateName := name
+	if strings.TrimSpace(templateName) == "" {
+		templateName = "config"
+	}
+	tmpl, err := template.New(templateName).Funcs(FuncMap(tracker)).Option("missingkey=error").Parse(string(raw))
 	if err != nil {
 		return nil, fmt.Errorf("parse template: %w", err)
 	}
