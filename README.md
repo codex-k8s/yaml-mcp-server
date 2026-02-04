@@ -27,6 +27,12 @@
 - Встроенные health endpoints: `/healthz`, `/readyz`.
 - Шаблонизация YAML с проверкой всех используемых env до старта.
 
+## 🔗 Связанные репозитории
+
+- `telegram-approver` — Telegram‑аппрувер для approval‑флоу: https://github.com/codex-k8s/telegram-approver
+- `codexctl` — CLI‑оркестратор окружений и Codex‑потоков: https://github.com/codex-k8s/codexctl
+- `project-example` — пример Kubernetes‑проекта с готовыми манифестами: https://github.com/codex-k8s/project-example
+
 ## 📦 Установка
 
 Требуется Go **>= 1.25.5** (см. `go.mod`).

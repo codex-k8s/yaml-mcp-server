@@ -26,6 +26,12 @@ explicit approval through pluggable approvers (HTTP/Shell/limits).
 - Health endpoints: `/healthz`, `/readyz`.
 - YAML templating with env checks before startup.
 
+## 🔗 Related repositories
+
+- `telegram-approver` — Telegram approver for approval flow: https://github.com/codex-k8s/telegram-approver
+- `codexctl` — CLI orchestrator for environments and Codex workflows: https://github.com/codex-k8s/codexctl
+- `project-example` — Kubernetes project example with ready manifests: https://github.com/codex-k8s/project-example
+
 ## 📦 Installation
 
 Go **>= 1.25.5** is required (see `go.mod`).
