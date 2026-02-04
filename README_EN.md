@@ -185,7 +185,7 @@ tools:
         timeout: "1m"
         command: |
           repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
-          if gh secret list -R "$repo" | awk '{print $1}' | grep -qx "{{ .Args.secret_name }}"; then
+          if gh secret list -R "$repo" | awk '{print $1}' | grep -qx "{{ "{{ .Args.secret_name }}" }}"; then
             echo "secret already exists"; exit 1; fi
     executor:
       type: shell
@@ -193,12 +193,12 @@ tools:
       command: |
         secret_value="$(head -c 32 /dev/urandom | base64)"
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
-        gh api -X PUT "repos/$repo/environments/{{ .Args.environment }}" >/dev/null
-        gh secret set {{ .Args.secret_name }} -R "$repo" --env {{ .Args.environment }} --body "$secret_value"
-        kubectl -n {{ .Args.namespace }} create secret generic {{ .Args.k8s_secret_name }} \
-          --from-literal={{ .Args.secret_name }}="$secret_value" \
+        gh api -X PUT "repos/$repo/environments/{{ "{{ .Args.environment }}" }}" >/dev/null
+        gh secret set {{ "{{ .Args.secret_name }}" }} -R "$repo" --env {{ "{{ .Args.environment }}" }} --body "$secret_value"
+        kubectl -n {{ "{{ .Args.namespace }}" }} create secret generic {{ "{{ .Args.k8s_secret_name }}" }} \
+          --from-literal={{ "{{ .Args.secret_name }}" }}="$secret_value" \
           --dry-run=client -o yaml | kubectl apply -f -
-        echo "secret {{ .Args.secret_name }} created in $repo env {{ .Args.environment }} and injected into {{ .Args.namespace }}/{{ .Args.k8s_secret_name }}"
+        echo "secret {{ "{{ .Args.secret_name }}" }} created in $repo env {{ "{{ .Args.environment }}" }} and injected into {{ "{{ .Args.namespace }}" }}/{{ "{{ .Args.k8s_secret_name }}" }}"
 ```
 
 ### Resources
@@ -308,6 +308,14 @@ Available template functions:
 - `env`, `envOr`, `default`, `ternary`, `join`, `lower`, `upper`, `trimPrefix`, `trimSuffix`, `replace`.
 
 The server checks that all referenced env vars exist **before** startup.
+
+⚠️ Important: the config is rendered **at startup**. Any `{{ .Args.* }}` expressions must be
+**escaped** so they are evaluated at tool call time, not during startup.
+Use a nested expression:
+
+```
+{{ "{{ .Args.secret_name }}" }}
+```
 
 ## ❤️ Health endpoints
 

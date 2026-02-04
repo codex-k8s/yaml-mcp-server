@@ -186,7 +186,7 @@ tools:
         timeout: "1m"
         command: |
           repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
-          if gh secret list -R "$repo" | awk '{print $1}' | grep -qx "{{ .Args.secret_name }}"; then
+          if gh secret list -R "$repo" | awk '{print $1}' | grep -qx "{{ "{{ .Args.secret_name }}" }}"; then
             echo "secret already exists"; exit 1; fi
     executor:
       type: shell
@@ -194,12 +194,12 @@ tools:
       command: |
         secret_value="$(head -c 32 /dev/urandom | base64)"
         repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
-        gh api -X PUT "repos/$repo/environments/{{ .Args.environment }}" >/dev/null
-        gh secret set {{ .Args.secret_name }} -R "$repo" --env {{ .Args.environment }} --body "$secret_value"
-        kubectl -n {{ .Args.namespace }} create secret generic {{ .Args.k8s_secret_name }} \
-          --from-literal={{ .Args.secret_name }}="$secret_value" \
+        gh api -X PUT "repos/$repo/environments/{{ "{{ .Args.environment }}" }}" >/dev/null
+        gh secret set {{ "{{ .Args.secret_name }}" }} -R "$repo" --env {{ "{{ .Args.environment }}" }} --body "$secret_value"
+        kubectl -n {{ "{{ .Args.namespace }}" }} create secret generic {{ "{{ .Args.k8s_secret_name }}" }} \
+          --from-literal={{ "{{ .Args.secret_name }}" }}="$secret_value" \
           --dry-run=client -o yaml | kubectl apply -f -
-        echo "secret {{ .Args.secret_name }} created in $repo env {{ .Args.environment }} and injected into {{ .Args.namespace }}/{{ .Args.k8s_secret_name }}"
+        echo "secret {{ "{{ .Args.secret_name }}" }} created in $repo env {{ "{{ .Args.environment }}" }} and injected into {{ "{{ .Args.namespace }}" }}/{{ "{{ .Args.k8s_secret_name }}" }}"
 ```
 
 ### Ресурсы
@@ -309,6 +309,14 @@ resources:
 - `env`, `envOr`, `default`, `ternary`, `join`, `lower`, `upper`, `trimPrefix`, `trimSuffix`, `replace`.
 
 Сервер проверяет, что все используемые env переменные заданы **до старта**.
+
+⚠️ Важно: конфиг рендерится **при старте** сервера. Все выражения вида `{{ .Args.* }}` должны
+быть **экранированы**, чтобы они отработали во время вызова инструмента, а не на старте.
+Используй вложенное выражение:
+
+```
+{{ "{{ .Args.secret_name }}" }}
+```
 
 ## ❤️ Health endpoints
 
