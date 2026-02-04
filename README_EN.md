@@ -57,11 +57,15 @@ codex mcp add yaml-mcp-server --url http://localhost:8080/mcp
 codex mcp list
 ```
 
+After adding, make sure to set `tool_timeout_sec` in `config.toml` so Codex does not terminate long approval flows
+on the client side (seconds).
+
 ### Option 2 — via config.toml
 
 ```toml
 [mcp_servers.yaml-mcp-server]
 url = "http://localhost:8080/mcp"
+tool_timeout_sec = 3600
 ```
 
 If the server is deployed in a cluster, use an ingress/port‑forward URL.

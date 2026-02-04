@@ -57,11 +57,15 @@ codex mcp add yaml-mcp-server --url http://localhost:8080/mcp
 codex mcp list
 ```
 
+После добавления обязательно выставьте `tool_timeout_sec` в `config.toml`, чтобы ожидание аппруверов не обрывалось
+клиентом Codex (таймаут считается в секундах).
+
 ### Вариант 2 — через config.toml
 
 ```toml
 [mcp_servers.yaml-mcp-server]
 url = "http://localhost:8080/mcp"
+tool_timeout_sec = 3600
 ```
 
 Если сервер развёрнут в кластере, укажите URL ingress/port‑forward и добавьте его тем же способом.
