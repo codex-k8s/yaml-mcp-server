@@ -52,6 +52,7 @@ To use a config embedded from `configs/`, pass:
 
 ```bash
 yaml-mcp-server --embedded-config github_secrets_postgres_k8s.yaml
+yaml-mcp-server --embedded-config github_review.yaml
 ```
 
 ## 🔌 Connect to Codex (CLI/IDE)
@@ -62,7 +63,7 @@ for trusted projects. The CLI and IDE extension share the same configuration.
 ### Option 1 — via CLI
 
 ```bash
-codex mcp add yaml_mcp --url http://localhost:8080/mcp
+codex mcp add github_secrets_postgres_k8s_mcp --url http://localhost:8080/mcp
 codex mcp list
 ```
 
@@ -72,12 +73,20 @@ on the client side (seconds).
 ### Option 2 — via config.toml
 
 ```toml
-[mcp_servers.yaml_mcp]
+[mcp_servers.github_secrets_postgres_k8s_mcp]
 url = "http://localhost:8080/mcp"
 tool_timeout_sec = 3600
 ```
 
 If the server is deployed in a cluster, use an ingress/port‑forward URL (or service DNS).
+
+You can also attach the built-in review workflow config:
+
+```toml
+[mcp_servers.github_review_mcp]
+url = "http://localhost:8080/mcp"
+tool_timeout_sec = 600
+```
 
 ## 🧩 YAML‑DSL (short)
 
@@ -87,7 +96,7 @@ YAML defines server settings, tools, and resources. See `configs/`.
 
 ```yaml
 server:
-  name: yaml_mcp
+  name: github_secrets_postgres_k8s_mcp
   version: "0.1.0"
   transport: "http"   # http | stdio
   shutdown_timeout: "10s"
@@ -120,12 +129,12 @@ for repeated tool calls. Cache keys are derived from `correlation_id`/`request_i
 
 ### Tool
 
-Use `snake_case` tool names with a service prefix (for example, `yaml_mcp_*`)
+Use `snake_case` tool names with a service prefix (for example, `github_*` or `k8s_*`)
 to avoid collisions with other MCP servers.
 
 ```yaml
 tools:
-  - name: yaml_mcp_create_github_secret_k8s
+  - name: github_create_env_secret_k8s
     title: "Create GitHub secret and K8s secret"
     description: |
       Creates a GitHub environment secret and injects it into Kubernetes after approval.
@@ -145,7 +154,7 @@ tools:
       destructive_hint: true
       idempotent_hint: false
       open_world_hint: true
-      title: "GitHub secret → K8s secret"
+      title: "Create GitHub env secret + K8s secret"
     requires_approval: true
     timeout: "1h"
     timeout_message: "approval timeout"
@@ -199,12 +208,12 @@ resources:
     text: "Hello from yaml-mcp-server"
 ```
 
-## 🔄 End‑to‑end DB flow (yaml_mcp_create_github_secret_k8s → yaml_mcp_create_psql_db_k8s)
+## 🔄 End‑to‑end DB flow (github_create_env_secret_k8s → k8s_create_postgres_db)
 
 1) The model requests secrets such as `PG_USER` and `PG_PASSWORD` via
-   `yaml_mcp_create_github_secret_k8s` (two separate calls).
+   `github_create_env_secret_k8s` (two separate calls).
    Secrets are created in GitHub and **immediately injected** into Kubernetes.
-2) The model calls `yaml_mcp_create_psql_db_k8s`, passing only secret names and keys:
+2) The model calls `k8s_create_postgres_db`, passing only secret names and keys:
    - `k8s_pg_user_secret_name` / `pg_user_secret_name`
    - `k8s_pg_password_secret_name` / `pg_password_secret_name`
 3) The tool reads values from K8s secrets and creates the database inside the PostgreSQL pod.
@@ -215,12 +224,12 @@ resources:
 - **Secrets are immediately available** to services via Kubernetes Secret.
 - **Unified approval chain and audit** through yaml-mcp-server.
 
-### yaml_mcp_create_psql_db_k8s request example
+### k8s_create_postgres_db request example
 
 ```json
 {
   "correlation_id": "corr-...",
-  "tool": "yaml_mcp_create_psql_db_k8s",
+  "tool": "k8s_create_postgres_db",
   "arguments": {
     "namespace": "project-ai-staging",
     "db_name": "billing",
@@ -259,7 +268,7 @@ Supported approvers:
 ```json
 {
   "correlation_id": "corr-...",
-  "tool": "yaml_mcp_create_github_secret_k8s",
+  "tool": "github_create_env_secret_k8s",
   "arguments": {
     "secret_name": "POSTGRES_PASSWORD",
     "environment": "ai-staging",
@@ -312,7 +321,9 @@ The server checks that all referenced env vars exist **before** startup.
 ## 📄 Examples
 
 - `configs/github_secrets_postgres_k8s.yaml`
-  (contains two tools: yaml_mcp_create_github_secret_k8s and yaml_mcp_create_psql_db_k8s)
+  (contains two tools: github_create_env_secret_k8s and k8s_create_postgres_db)
+- `configs/github_review.yaml`
+  (tools for deterministic PR review/comment workflows)
 
 ## 🧷 Security notes
 

@@ -1,0 +1,926 @@
+server:
+  name: github_review_mcp
+  version: "0.1.0"
+  transport: "http"
+  shutdown_timeout: "10s"
+  idempotency_cache:
+    enabled: true
+    ttl: "24h"
+    max_entries: 2000
+    key_strategy: "auto"
+  startup_hooks:
+    - timeout: "10s"
+      command: |
+        set -euo pipefail
+        command -v gh >/dev/null
+    - timeout: "30s"
+      command: |
+        set -euo pipefail
+        printf %s "$CODEXCTL_GH_PAT" | gh auth login --with-token
+  http:
+    listen: ":8080"
+    path: "/mcp"
+    read_timeout: "10m"
+    write_timeout: "10m"
+    idle_timeout: "10m"
+    session_timeout: "5m"
+    stateless: false
+
+tools:
+  - name: github_review_list_threads
+    title: "List unresolved review threads"
+    description: |
+      Lists unresolved PR review threads with pagination.
+      Input fields:
+      - pr_number: pull request number.
+      - offset: optional pagination offset (default: 0).
+      - limit: optional page size (default: 50).
+      Optional:
+      - correlation_id: stable id for idempotent responses.
+      - response_format: json or markdown (default: json).
+      Notes:
+      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - The response payload is returned inside "reason" as JSON:
+        {total, count, offset, next_offset, has_more, items}.
+    annotations:
+      read_only_hint: true
+      destructive_hint: false
+      idempotent_hint: true
+      open_world_hint: true
+      title: "List review threads"
+    requires_approval: false
+    timeout: "5m"
+    timeout_message: "timeout"
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: ["pr_number"]
+      properties:
+        correlation_id:
+          type: string
+        response_format:
+          type: string
+          enum: ["json", "markdown"]
+        pr_number:
+          type: integer
+          minimum: 1
+        offset:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: ["status", "decision", "correlation_id"]
+      properties:
+        status:
+          type: string
+          enum: ["success", "denied", "error"]
+        decision:
+          type: string
+          enum: ["approve", "deny", "error"]
+        reason:
+          type: string
+        correlation_id:
+          type: string
+    executor:
+      type: shell
+      timeout: "5m"
+      command: |
+        set -euo pipefail
+        repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
+        owner="${repo%%/*}"
+        name="${repo##*/}"
+        pr_number="{{ .Args.pr_number }}"
+        offset="{{ if .Args.offset }}{{ .Args.offset }}{{ else }}0{{ end }}"
+        limit="{{ if .Args.limit }}{{ .Args.limit }}{{ else }}50{{ end }}"
+        query="$(cat <<'EOF'
+        query($owner:String!, $name:String!, $number:Int!) {
+          repository(owner:$owner, name:$name) {
+            pullRequest(number:$number) {
+              reviewThreads(first: 100) {
+                nodes {
+                  id
+                  isResolved
+                  isOutdated
+                  comments(first: 50) {
+                    totalCount
+                    nodes {
+                      databaseId
+                      body
+                      author { login }
+                      path
+                      line
+                      url
+                      createdAt
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        EOF
+        )"
+        lines="$(gh api graphql -f query="$query" -F owner="$owner" -F name="$name" -F number="$pr_number" --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false) | select((.comments.nodes | length) > 0) | {thread_id: .id, comment_id: (.comments.nodes[0].databaseId), author: (.comments.nodes[0].author.login), body: (.comments.nodes[0].body), path: (.comments.nodes[0].path), line: (.comments.nodes[0].line), url: (.comments.nodes[0].url), created_at: (.comments.nodes[0].createdAt), comment_count: .comments.totalCount, last_comment_id: (.comments.nodes[-1].databaseId), last_author: (.comments.nodes[-1].author.login), last_body: (.comments.nodes[-1].body), is_outdated: .isOutdated}')"
+        total="$(printf '%s\n' "$lines" | awk 'NF{count++} END{print count+0}')"
+        selected="$(printf '%s\n' "$lines" | awk -v off="$offset" -v lim="$limit" 'NF{count++; if (count>off && count<=off+lim) print}')"
+        count="$(printf '%s\n' "$selected" | awk 'NF{count++} END{print count+0}')"
+        items="$(printf '%s\n' "$selected" | awk 'BEGIN{first=1; printf "["} NF{if(!first) printf ","; printf "%s", $0; first=0} END{printf "]"}')"
+        next_offset=$((offset+count))
+        has_more=false
+        if [ "$next_offset" -lt "$total" ]; then
+          has_more=true
+        fi
+        printf '{"total":%s,"count":%s,"offset":%s,"next_offset":%s,"has_more":%s,"items":%s}\n' "$total" "$count" "$offset" "$next_offset" "$has_more" "$items"
+  - name: github_review_get_thread
+    title: "Get review thread details"
+    description: |
+      Retrieves full review thread details by thread_id.
+      Input fields:
+      - thread_id: review thread id from github_review_list_threads.
+      Optional:
+      - correlation_id: stable id for idempotent responses.
+      - response_format: json or markdown (default: json).
+      Notes:
+      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - The response payload is returned inside "reason" as JSON.
+    annotations:
+      read_only_hint: true
+      destructive_hint: false
+      idempotent_hint: true
+      open_world_hint: true
+      title: "Get review thread"
+    requires_approval: false
+    timeout: "5m"
+    timeout_message: "timeout"
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: ["thread_id"]
+      properties:
+        correlation_id:
+          type: string
+        response_format:
+          type: string
+          enum: ["json", "markdown"]
+        thread_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: ["status", "decision", "correlation_id"]
+      properties:
+        status:
+          type: string
+          enum: ["success", "denied", "error"]
+        decision:
+          type: string
+          enum: ["approve", "deny", "error"]
+        reason:
+          type: string
+        correlation_id:
+          type: string
+    executor:
+      type: shell
+      timeout: "5m"
+      command: |
+        set -euo pipefail
+        thread_id="{{ .Args.thread_id }}"
+        query="$(cat <<'EOF'
+        query($id:ID!) {
+          node(id:$id) {
+            ... on PullRequestReviewThread {
+              id
+              isResolved
+              isOutdated
+              comments(first: 100) {
+                nodes {
+                  databaseId
+                  body
+                  author { login }
+                  createdAt
+                  url
+                }
+              }
+            }
+          }
+        }
+        EOF
+        )"
+        gh api graphql -f query="$query" -F id="$thread_id" --jq '.data.node | {thread_id: .id, is_resolved: .isResolved, is_outdated: .isOutdated, comments: [.comments.nodes[] | {comment_id: .databaseId, author: .author.login, body: .body, created_at: .createdAt, url: .url}] }'
+  - name: github_review_reply_thread
+    title: "Reply to review thread"
+    description: |
+      Replies to a review thread by comment_id and includes an automatic quote.
+      Input fields:
+      - comment_id: numeric review comment id to reply to.
+      - reply_text: response text; write in Russian.
+      Optional:
+      - correlation_id: stable id for idempotent responses.
+      - response_format: json or markdown (default: json).
+      Notes:
+      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - The tool always prepends a quoted original comment.
+    annotations:
+      read_only_hint: false
+      destructive_hint: true
+      idempotent_hint: false
+      open_world_hint: true
+      title: "Reply to review thread"
+    requires_approval: false
+    timeout: "5m"
+    timeout_message: "timeout"
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: ["comment_id", "reply_text"]
+      properties:
+        correlation_id:
+          type: string
+        response_format:
+          type: string
+          enum: ["json", "markdown"]
+        comment_id:
+          type: integer
+          minimum: 1
+        reply_text:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: ["status", "decision", "correlation_id"]
+      properties:
+        status:
+          type: string
+          enum: ["success", "denied", "error"]
+        decision:
+          type: string
+          enum: ["approve", "deny", "error"]
+        reason:
+          type: string
+        correlation_id:
+          type: string
+    executor:
+      type: shell
+      timeout: "5m"
+      env:
+        REPLY_TEXT: '{{ .Args.reply_text }}'
+      command: |
+        set -euo pipefail
+        repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
+        comment_id="{{ .Args.comment_id }}"
+        reply_text="${REPLY_TEXT}"
+        original="$(gh api "repos/$repo/pulls/comments/$comment_id" --jq '.body')"
+        quoted="$(printf '%s\n' "$original" | sed 's/^/> /')"
+        body="$(printf "%s\n\n%s" "$quoted" "$reply_text")"
+        gh api -X POST "repos/$repo/pulls/comments/$comment_id/replies" -f body="$body" >/dev/null
+        echo "replied to review comment $comment_id"
+  - name: github_review_resolve_thread
+    title: "Resolve review thread"
+    description: |
+      Resolves a review thread by thread_id.
+      Input fields:
+      - thread_id: review thread id from github_review_list_threads.
+      Optional:
+      - correlation_id: stable id for idempotent responses.
+      - response_format: json or markdown (default: json).
+    annotations:
+      read_only_hint: false
+      destructive_hint: true
+      idempotent_hint: false
+      open_world_hint: true
+      title: "Resolve review thread"
+    requires_approval: false
+    timeout: "5m"
+    timeout_message: "timeout"
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: ["thread_id"]
+      properties:
+        correlation_id:
+          type: string
+        response_format:
+          type: string
+          enum: ["json", "markdown"]
+        thread_id:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: ["status", "decision", "correlation_id"]
+      properties:
+        status:
+          type: string
+          enum: ["success", "denied", "error"]
+        decision:
+          type: string
+          enum: ["approve", "deny", "error"]
+        reason:
+          type: string
+        correlation_id:
+          type: string
+    executor:
+      type: shell
+      timeout: "5m"
+      command: |
+        set -euo pipefail
+        thread_id="{{ .Args.thread_id }}"
+        query="$(cat <<'EOF'
+        mutation($threadId:ID!) {
+          resolveReviewThread(input: {threadId: $threadId}) {
+            thread {
+              id
+              isResolved
+            }
+          }
+        }
+        EOF
+        )"
+        gh api graphql -f query="$query" -F threadId="$thread_id" --jq '.data.resolveReviewThread.thread | {thread_id: .id, is_resolved: .isResolved}'
+  - name: github_pr_context
+    title: "Get PR context"
+    description: |
+      Returns a compact PR context for the given PR number.
+      Input fields:
+      - pr_number: pull request number.
+      Optional:
+      - correlation_id: stable id for idempotent responses.
+      - response_format: json or markdown (default: json).
+      Notes:
+      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - The response payload is returned inside "reason" as JSON.
+    annotations:
+      read_only_hint: true
+      destructive_hint: false
+      idempotent_hint: true
+      open_world_hint: true
+      title: "Get PR context"
+    requires_approval: false
+    timeout: "5m"
+    timeout_message: "timeout"
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: ["pr_number"]
+      properties:
+        correlation_id:
+          type: string
+        response_format:
+          type: string
+          enum: ["json", "markdown"]
+        pr_number:
+          type: integer
+          minimum: 1
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: ["status", "decision", "correlation_id"]
+      properties:
+        status:
+          type: string
+          enum: ["success", "denied", "error"]
+        decision:
+          type: string
+          enum: ["approve", "deny", "error"]
+        reason:
+          type: string
+        correlation_id:
+          type: string
+    executor:
+      type: shell
+      timeout: "5m"
+      command: |
+        set -euo pipefail
+        repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
+        pr_number="{{ .Args.pr_number }}"
+        gh pr view "$pr_number" --repo "$repo" --json number,title,state,url,body,headRefName,baseRefName,author,isDraft,mergeable,labels --jq '{number: .number, title: .title, state: .state, url: .url, body: .body, head_ref: .headRefName, base_ref: .baseRefName, author: .author.login, is_draft: .isDraft, mergeable: .mergeable, labels: [.labels[].name]}'
+  - name: github_pr_list_issue_comments
+    title: "List PR issue comments"
+    description: |
+      Lists PR issue comments (not review threads) with pagination.
+      Input fields:
+      - pr_number: pull request number.
+      - offset: optional pagination offset (default: 0).
+      - limit: optional page size (default: 50).
+      Optional:
+      - correlation_id: stable id for idempotent responses.
+      - response_format: json or markdown (default: json).
+      Notes:
+      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - The response payload is returned inside "reason" as JSON:
+        {total, count, offset, next_offset, has_more, items}.
+    annotations:
+      read_only_hint: true
+      destructive_hint: false
+      idempotent_hint: true
+      open_world_hint: true
+      title: "List PR issue comments"
+    requires_approval: false
+    timeout: "5m"
+    timeout_message: "timeout"
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: ["pr_number"]
+      properties:
+        correlation_id:
+          type: string
+        response_format:
+          type: string
+          enum: ["json", "markdown"]
+        pr_number:
+          type: integer
+          minimum: 1
+        offset:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: ["status", "decision", "correlation_id"]
+      properties:
+        status:
+          type: string
+          enum: ["success", "denied", "error"]
+        decision:
+          type: string
+          enum: ["approve", "deny", "error"]
+        reason:
+          type: string
+        correlation_id:
+          type: string
+    executor:
+      type: shell
+      timeout: "5m"
+      command: |
+        set -euo pipefail
+        repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
+        pr_number="{{ .Args.pr_number }}"
+        offset="{{ if .Args.offset }}{{ .Args.offset }}{{ else }}0{{ end }}"
+        limit="{{ if .Args.limit }}{{ .Args.limit }}{{ else }}50{{ end }}"
+        lines="$(gh api "repos/$repo/issues/$pr_number/comments?per_page=100" --paginate --jq '.[] | {comment_id: .id, author: .user.login, body: .body, url: .html_url, created_at: .created_at}')"
+        total="$(printf '%s\n' "$lines" | awk 'NF{count++} END{print count+0}')"
+        selected="$(printf '%s\n' "$lines" | awk -v off="$offset" -v lim="$limit" 'NF{count++; if (count>off && count<=off+lim) print}')"
+        count="$(printf '%s\n' "$selected" | awk 'NF{count++} END{print count+0}')"
+        items="$(printf '%s\n' "$selected" | awk 'BEGIN{first=1; printf "["} NF{if(!first) printf ","; printf "%s", $0; first=0} END{printf "]"}')"
+        next_offset=$((offset+count))
+        has_more=false
+        if [ "$next_offset" -lt "$total" ]; then
+          has_more=true
+        fi
+        printf '{"total":%s,"count":%s,"offset":%s,"next_offset":%s,"has_more":%s,"items":%s}\n' "$total" "$count" "$offset" "$next_offset" "$has_more" "$items"
+  - name: github_pr_add_comment
+    title: "Add PR issue comment"
+    description: |
+      Adds a comment to the PR conversation (issue comments).
+      Input fields:
+      - pr_number: pull request number.
+      - comment_text: comment text; write in Russian.
+      Optional:
+      - quote_comment_id: comment id to quote before the reply.
+      - correlation_id: stable id for idempotent responses.
+      - response_format: json or markdown (default: json).
+      Notes:
+      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+    annotations:
+      read_only_hint: false
+      destructive_hint: true
+      idempotent_hint: false
+      open_world_hint: true
+      title: "Add PR comment"
+    requires_approval: false
+    timeout: "5m"
+    timeout_message: "timeout"
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: ["pr_number", "comment_text"]
+      properties:
+        correlation_id:
+          type: string
+        response_format:
+          type: string
+          enum: ["json", "markdown"]
+        pr_number:
+          type: integer
+          minimum: 1
+        comment_text:
+          type: string
+          minLength: 1
+        quote_comment_id:
+          type: integer
+          minimum: 1
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: ["status", "decision", "correlation_id"]
+      properties:
+        status:
+          type: string
+          enum: ["success", "denied", "error"]
+        decision:
+          type: string
+          enum: ["approve", "deny", "error"]
+        reason:
+          type: string
+        correlation_id:
+          type: string
+    executor:
+      type: shell
+      timeout: "5m"
+      env:
+        COMMENT_TEXT: '{{ .Args.comment_text }}'
+      command: |
+        set -euo pipefail
+        repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
+        pr_number="{{ .Args.pr_number }}"
+        comment_text="${COMMENT_TEXT}"
+        quote_id="{{ if .Args.quote_comment_id }}{{ .Args.quote_comment_id }}{{ end }}"
+        if [ -n "$quote_id" ]; then
+          original="$(gh api "repos/$repo/issues/comments/$quote_id" --jq '.body')"
+          quoted="$(printf '%s\n' "$original" | sed 's/^/> /')"
+          comment_text="$(printf "%s\n\n%s" "$quoted" "$comment_text")"
+        fi
+        gh api -X POST "repos/$repo/issues/$pr_number/comments" -f body="$comment_text" >/dev/null
+        echo "comment added to PR $pr_number"
+  - name: github_pr_update_body
+    title: "Overwrite PR body"
+    description: |
+      Overwrites the PR body completely.
+      Input fields:
+      - pr_number: pull request number.
+      - body: full PR body (entire content).
+      Optional:
+      - correlation_id: stable id for idempotent responses.
+      - response_format: json or markdown (default: json).
+      Notes:
+      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - Body is replaced entirely; include all required sections.
+    annotations:
+      read_only_hint: false
+      destructive_hint: true
+      idempotent_hint: false
+      open_world_hint: true
+      title: "Overwrite PR body"
+    requires_approval: false
+    timeout: "5m"
+    timeout_message: "timeout"
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: ["pr_number", "body"]
+      properties:
+        correlation_id:
+          type: string
+        response_format:
+          type: string
+          enum: ["json", "markdown"]
+        pr_number:
+          type: integer
+          minimum: 1
+        body:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: ["status", "decision", "correlation_id"]
+      properties:
+        status:
+          type: string
+          enum: ["success", "denied", "error"]
+        decision:
+          type: string
+          enum: ["approve", "deny", "error"]
+        reason:
+          type: string
+        correlation_id:
+          type: string
+    executor:
+      type: shell
+      timeout: "5m"
+      env:
+        PR_BODY: '{{ .Args.body }}'
+      command: |
+        set -euo pipefail
+        repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
+        pr_number="{{ .Args.pr_number }}"
+        gh api -X PATCH "repos/$repo/pulls/$pr_number" -f body="$PR_BODY" >/dev/null
+        echo "PR body updated for $pr_number"
+  - name: github_issue_update_body
+    title: "Overwrite issue body"
+    description: |
+      Overwrites the issue body completely.
+      Input fields:
+      - issue_number: issue number.
+      - body: full issue body (entire content).
+      Optional:
+      - correlation_id: stable id for idempotent responses.
+      - response_format: json or markdown (default: json).
+      Notes:
+      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - Body is replaced entirely; include all required sections.
+      - If you use planning hierarchy, keep the marker: AI-PLAN-PARENT: #<root>.
+    annotations:
+      read_only_hint: false
+      destructive_hint: true
+      idempotent_hint: false
+      open_world_hint: true
+      title: "Overwrite issue body"
+    requires_approval: false
+    timeout: "5m"
+    timeout_message: "timeout"
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: ["issue_number", "body"]
+      properties:
+        correlation_id:
+          type: string
+        response_format:
+          type: string
+          enum: ["json", "markdown"]
+        issue_number:
+          type: integer
+          minimum: 1
+        body:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: ["status", "decision", "correlation_id"]
+      properties:
+        status:
+          type: string
+          enum: ["success", "denied", "error"]
+        decision:
+          type: string
+          enum: ["approve", "deny", "error"]
+        reason:
+          type: string
+        correlation_id:
+          type: string
+    executor:
+      type: shell
+      timeout: "5m"
+      env:
+        ISSUE_BODY: '{{ .Args.body }}'
+      command: |
+        set -euo pipefail
+        repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
+        issue_number="{{ .Args.issue_number }}"
+        gh api -X PATCH "repos/$repo/issues/$issue_number" -f body="$ISSUE_BODY" >/dev/null
+        echo "issue body updated for $issue_number"
+  - name: github_pr_set_labels
+    title: "Set PR semantic labels"
+    description: |
+      Replaces PR semantic labels with the provided set.
+      Input fields:
+      - pr_number: pull request number.
+      - labels_csv: comma-separated labels.
+      Allowed labels: feature, bug, doc, debt, idea, epic.
+      Notes:
+      - All ai-* labels are preserved automatically.
+      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      Optional:
+      - correlation_id: stable id for idempotent responses.
+      - response_format: json or markdown (default: json).
+    annotations:
+      read_only_hint: false
+      destructive_hint: true
+      idempotent_hint: false
+      open_world_hint: true
+      title: "Set PR labels"
+    requires_approval: false
+    timeout: "5m"
+    timeout_message: "timeout"
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: ["pr_number", "labels_csv"]
+      properties:
+        correlation_id:
+          type: string
+        response_format:
+          type: string
+          enum: ["json", "markdown"]
+        pr_number:
+          type: integer
+          minimum: 1
+        labels_csv:
+          type: string
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: ["status", "decision", "correlation_id"]
+      properties:
+        status:
+          type: string
+          enum: ["success", "denied", "error"]
+        decision:
+          type: string
+          enum: ["approve", "deny", "error"]
+        reason:
+          type: string
+        correlation_id:
+          type: string
+    executor:
+      type: shell
+      timeout: "5m"
+      env:
+        LABELS_CSV: '{{ .Args.labels_csv }}'
+      command: |
+        set -euo pipefail
+        repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
+        pr_number="{{ .Args.pr_number }}"
+        labels_csv="${LABELS_CSV}"
+        allowed_re="^(feature|bug|doc|debt|idea|epic)$"
+        declare -a new_labels
+        if [ -n "$labels_csv" ]; then
+          IFS=',' read -r -a labels <<< "$labels_csv"
+          for label in "${labels[@]}"; do
+            label="$(echo "$label" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            if [ -z "$label" ]; then
+              continue
+            fi
+            if ! [[ "$label" =~ $allowed_re ]]; then
+              echo "label not allowed: $label"
+              exit 1
+            fi
+            new_labels+=("$label")
+          done
+        fi
+        existing="$(gh api "repos/$repo/issues/$pr_number/labels" --paginate --jq '.[].name')"
+        declare -a ai_labels
+        while IFS= read -r label; do
+          if [[ "$label" == ai-* ]]; then
+            ai_labels+=("$label")
+          fi
+        done <<< "$existing"
+        declare -A seen
+        declare -a final_labels
+        for label in "${ai_labels[@]}" "${new_labels[@]}"; do
+          if [ -z "$label" ]; then
+            continue
+          fi
+          if [ -z "${seen[$label]:-}" ]; then
+            final_labels+=("$label")
+            seen[$label]=1
+          fi
+        done
+        if [ "${#final_labels[@]}" -eq 0 ]; then
+          gh api -X DELETE "repos/$repo/issues/$pr_number/labels" >/dev/null
+        else
+          args=()
+          for label in "${final_labels[@]}"; do
+            args+=(-f "labels[]=$label")
+          done
+          gh api -X PUT "repos/$repo/issues/$pr_number/labels" "${args[@]}" >/dev/null
+        fi
+        echo "labels updated for PR $pr_number"
+  - name: github_search_issues
+    title: "Search issues and PRs"
+    description: |
+      Searches issues and PRs in the repository.
+      Input fields:
+      - query: GitHub search query (without repo: qualifier).
+      - page: optional page number (default: 1).
+      - per_page: optional page size (default: 20, max: 100).
+      Optional:
+      - correlation_id: stable id for idempotent responses.
+      - response_format: json or markdown (default: json).
+      Notes:
+      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+      - The response payload is returned inside "reason" as JSON.
+    annotations:
+      read_only_hint: true
+      destructive_hint: false
+      idempotent_hint: true
+      open_world_hint: true
+      title: "Search issues"
+    requires_approval: false
+    timeout: "5m"
+    timeout_message: "timeout"
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: ["query"]
+      properties:
+        correlation_id:
+          type: string
+        response_format:
+          type: string
+          enum: ["json", "markdown"]
+        query:
+          type: string
+          minLength: 1
+        page:
+          type: integer
+          minimum: 1
+        per_page:
+          type: integer
+          minimum: 1
+          maximum: 100
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: ["status", "decision", "correlation_id"]
+      properties:
+        status:
+          type: string
+          enum: ["success", "denied", "error"]
+        decision:
+          type: string
+          enum: ["approve", "deny", "error"]
+        reason:
+          type: string
+        correlation_id:
+          type: string
+    executor:
+      type: shell
+      timeout: "5m"
+      command: |
+        set -euo pipefail
+        repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
+        query="{{ .Args.query }}"
+        page="{{ if .Args.page }}{{ .Args.page }}{{ else }}1{{ end }}"
+        per_page="{{ if .Args.per_page }}{{ .Args.per_page }}{{ else }}20{{ end }}"
+        full_query="repo:$repo $query"
+        gh api "search/issues" -f q="$full_query" -F page="$page" -F per_page="$per_page" --jq '{total: .total_count, items: [.items[] | {number: .number, title: .title, state: .state, url: .html_url, labels: [.labels[].name], updated_at: .updated_at, author: .user.login, is_pr: (.pull_request != null)}] }'
+  - name: github_ask_question
+    title: "Ask a clarification question"
+    description: |
+      Posts a clarification question to an Issue or PR.
+      Input fields:
+      - issue_number: issue or PR number.
+      - question_text: question text to post.
+      Optional:
+      - correlation_id: stable id for idempotent responses.
+      - response_format: json or markdown (default: json).
+      Notes:
+      - Use this when there are blockers or contradictions.
+      - Repository is fixed via YAML_MCP_GITHUB_REPO env variable.
+    annotations:
+      read_only_hint: false
+      destructive_hint: true
+      idempotent_hint: false
+      open_world_hint: true
+      title: "Ask clarification question"
+    requires_approval: false
+    timeout: "5m"
+    timeout_message: "timeout"
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: ["issue_number", "question_text"]
+      properties:
+        correlation_id:
+          type: string
+        response_format:
+          type: string
+          enum: ["json", "markdown"]
+        issue_number:
+          type: integer
+          minimum: 1
+        question_text:
+          type: string
+          minLength: 1
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: ["status", "decision", "correlation_id"]
+      properties:
+        status:
+          type: string
+          enum: ["success", "denied", "error"]
+        decision:
+          type: string
+          enum: ["approve", "deny", "error"]
+        reason:
+          type: string
+        correlation_id:
+          type: string
+    executor:
+      type: shell
+      timeout: "5m"
+      env:
+        QUESTION_TEXT: '{{ .Args.question_text }}'
+      command: |
+        set -euo pipefail
+        repo="{{ env "YAML_MCP_GITHUB_REPO" }}"
+        issue_number="{{ .Args.issue_number }}"
+        gh api -X POST "repos/$repo/issues/$issue_number/comments" -f body="$QUESTION_TEXT" >/dev/null
+        echo "question posted to $issue_number"

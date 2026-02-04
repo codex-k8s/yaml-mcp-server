@@ -53,6 +53,7 @@ yaml-mcp-server
 
 ```bash
 yaml-mcp-server --embedded-config github_secrets_postgres_k8s.yaml
+yaml-mcp-server --embedded-config github_review.yaml
 ```
 
 ## 🔌 Подключение к Codex (CLI/IDE)
@@ -63,7 +64,7 @@ Codex читает конфигурацию MCP из `~/.codex/config.toml`, л�
 ### Вариант 1 — через CLI
 
 ```bash
-codex mcp add yaml_mcp --url http://localhost:8080/mcp
+codex mcp add github_secrets_postgres_k8s_mcp --url http://localhost:8080/mcp
 codex mcp list
 ```
 
@@ -73,12 +74,20 @@ codex mcp list
 ### Вариант 2 — через config.toml
 
 ```toml
-[mcp_servers.yaml_mcp]
+[mcp_servers.github_secrets_postgres_k8s_mcp]
 url = "http://localhost:8080/mcp"
 tool_timeout_sec = 3600
 ```
 
 Если сервер развёрнут в кластере, укажите URL ingress/port‑forward (или сервисный DNS) и добавьте его тем же способом.
+
+Дополнительно можно подключить встроенный конфиг для review‑потоков:
+
+```toml
+[mcp_servers.github_review_mcp]
+url = "http://localhost:8080/mcp"
+tool_timeout_sec = 600
+```
 
 ## 🧩 YAML‑DSL (кратко)
 
@@ -88,7 +97,7 @@ YAML описывает сервер, инструменты и ресурсы. 
 
 ```yaml
 server:
-  name: yaml_mcp
+  name: github_secrets_postgres_k8s_mcp
   version: "0.1.0"
   transport: "http"   # http | stdio
   shutdown_timeout: "10s"
@@ -122,11 +131,11 @@ server:
 ### Инструмент
 
 Рекомендуем придерживаться нейминга `snake_case` с префиксом сервиса
-(например, `yaml_mcp_*`), чтобы избегать коллизий между MCP‑сервером и внешними инструментами.
+(например, `github_*` или `k8s_*`), чтобы избегать коллизий между MCP‑сервером и внешними инструментами.
 
 ```yaml
 tools:
-  - name: yaml_mcp_create_github_secret_k8s
+  - name: github_create_env_secret_k8s
     title: "Create GitHub secret and K8s secret"
     description: |
       Creates a GitHub environment secret and injects it into Kubernetes after approval.
@@ -146,7 +155,7 @@ tools:
       destructive_hint: true
       idempotent_hint: false
       open_world_hint: true
-      title: "GitHub secret → K8s secret"
+      title: "Create GitHub env secret + K8s secret"
     requires_approval: true
     timeout: "1h"
     timeout_message: "approval timeout"
@@ -200,12 +209,12 @@ resources:
     text: "Hello from yaml-mcp-server"
 ```
 
-## 🔄 Пример сквозного флоу для БД (yaml_mcp_create_github_secret_k8s → yaml_mcp_create_psql_db_k8s)
+## 🔄 Пример сквозного флоу для БД (github_create_env_secret_k8s → k8s_create_postgres_db)
 
 1) Модель запрашивает создание секрета с именем, например `PG_USER` и `PG_PASSWORD` через
-   `yaml_mcp_create_github_secret_k8s` (два отдельных вызова).
+   `github_create_env_secret_k8s` (два отдельных вызова).
    Секреты создаются в GitHub и **сразу инъектятся** в Kubernetes в заданный namespace.
-2) Модель вызывает `yaml_mcp_create_psql_db_k8s`, передавая **только имена** секретов и ключей:
+2) Модель вызывает `k8s_create_postgres_db`, передавая **только имена** секретов и ключей:
    - `k8s_pg_user_secret_name` / `pg_user_secret_name`
    - `k8s_pg_password_secret_name` / `pg_password_secret_name`
 3) Инструмент сам читает значения из K8s secrets и создаёт БД внутри PostgreSQL Pod.
@@ -216,12 +225,12 @@ resources:
 - **Секреты сразу доступны сервисам** через Kubernetes Secret.
 - **Единая цепочка аппруверов и аудит** — весь поток проходит через yaml-mcp-server.
 
-### Пример запроса для yaml_mcp_create_psql_db_k8s
+### Пример запроса для k8s_create_postgres_db
 
 ```json
 {
   "correlation_id": "corr-...",
-  "tool": "yaml_mcp_create_psql_db_k8s",
+  "tool": "k8s_create_postgres_db",
   "arguments": {
     "namespace": "project-ai-staging",
     "db_name": "billing",
@@ -260,7 +269,7 @@ resources:
 ```json
 {
   "correlation_id": "corr-...",
-  "tool": "yaml_mcp_create_github_secret_k8s",
+  "tool": "github_create_env_secret_k8s",
   "arguments": {
     "secret_name": "POSTGRES_PASSWORD",
     "environment": "ai-staging",
@@ -313,7 +322,9 @@ resources:
 ## 📄 Примеры
 
 - `configs/github_secrets_postgres_k8s.yaml`
-  (содержит два инструмента: yaml_mcp_create_github_secret_k8s и yaml_mcp_create_psql_db_k8s)
+  (содержит два инструмента: github_create_env_secret_k8s и k8s_create_postgres_db)
+- `configs/github_review.yaml`
+  (инструменты для детерминированной работы с review/комментариями PR)
 
 ## 🧷 Заметки по безопасности
 
