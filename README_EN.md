@@ -45,6 +45,27 @@ yaml-mcp-server
 
 Default MCP HTTP endpoint: `http://localhost:8080/mcp`.
 
+## 🔌 Connect to Codex (CLI/IDE)
+
+Codex stores MCP configuration in `~/.codex/config.toml`. You can also scope it per project with `.codex/config.toml`
+for trusted projects. The CLI and IDE extension share the same configuration.
+
+### Option 1 — via CLI
+
+```bash
+codex mcp add yaml-mcp-server --url http://localhost:8080/mcp
+codex mcp list
+```
+
+### Option 2 — via config.toml
+
+```toml
+[mcp_servers.yaml-mcp-server]
+url = "http://localhost:8080/mcp"
+```
+
+If the server is deployed in a cluster, use an ingress/port‑forward URL.
+
 ## 🧩 YAML‑DSL (short)
 
 YAML defines server settings, tools, and resources. See `examples/`.
