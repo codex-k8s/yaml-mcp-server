@@ -139,6 +139,50 @@ resources:
     text: "Hello from yaml-mcp-server"
 ```
 
+## 🔄 End‑to‑end DB flow (GitHubSecretCreatorInK8s → PsqlDbCreatorInK8s)
+
+1) The model requests secrets such as `PG_USER` and `PG_PASSWORD` via `GitHubSecretCreatorInK8s`.
+   Secrets are created in GitHub and **immediately injected** into Kubernetes.
+2) The model calls `PsqlDbCreatorInK8s`, passing only secret names and keys:
+   - `k8s_pg_user_secret_name` / `pg_user_secret_name`
+   - `k8s_pg_password_secret_name` / `pg_password_secret_name`
+3) The tool reads values from K8s secrets and creates the database inside the PostgreSQL pod.
+
+### Benefits of this approach
+
+- **The model never sees secret values**, but can still execute an approved workflow.
+- **Secrets are immediately available** to services via Kubernetes Secret.
+- **Unified approval chain and audit** through yaml-mcp-server.
+
+### PsqlDbCreatorInK8s request example
+
+```json
+{
+  "correlation_id": "corr-...",
+  "tool": "PsqlDbCreatorInK8s",
+  "arguments": {
+    "namespace": "project-ai-staging",
+    "db_name": "billing",
+    "k8s_pg_user_secret_name": "db-credentials",
+    "pg_user_secret_name": "PG_USER",
+    "k8s_pg_password_secret_name": "db-credentials",
+    "pg_password_secret_name": "PG_PASSWORD",
+    "justification": "New database required for billing service"
+  }
+}
+```
+
+### Response example
+
+```json
+{
+  "status": "success",
+  "decision": "approve",
+  "reason": "database billing created in namespace project-ai-staging",
+  "correlation_id": "corr-..."
+}
+```
+
 ## 🧪 Approvers
 
 Supported approvers:
@@ -207,6 +251,7 @@ The server checks that all referenced env vars exist **before** startup.
 
 - `examples/secretcreator_shell.yaml`
 - `examples/secretcreator_shell_http.yaml`
+- `examples/psqldbcreator_shell_http.yaml`
 
 ## 🧷 Security notes
 

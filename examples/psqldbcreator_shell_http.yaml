@@ -1,0 +1,120 @@
+server:
+  name: yaml-mcp-server
+  version: "0.1.0"
+  transport: "http"
+  shutdown_timeout: "10s"
+  startup_hooks:
+    - timeout: "10s"
+      command: |
+        set -euo pipefail
+        command -v kubectl >/dev/null
+  http:
+    listen: ":8080"
+    path: "/mcp"
+    read_timeout: "1h"
+    write_timeout: "1h"
+    idle_timeout: "1h"
+    session_timeout: "5m"
+    stateless: false
+
+tools:
+  - name: PsqlDbCreatorInK8s
+    title: "Create PostgreSQL database in K8s"
+    description: |
+      Creates a PostgreSQL database in the target Kubernetes namespace after approval.
+      Input fields:
+      - namespace: Kubernetes namespace where PostgreSQL runs.
+      - db_name: database name (lowercase, digits, underscores).
+      - k8s_pg_user_secret_name: Kubernetes Secret name that stores DB user.
+      - pg_user_secret_name: key inside the secret for DB user.
+      - k8s_pg_password_secret_name: Kubernetes Secret name that stores DB password.
+      - pg_password_secret_name: key inside the secret for DB password.
+      - justification: required; write in Russian.
+      Environment:
+      - POSTGRES_POD_SELECTOR (optional): pod label selector, default "app=postgres".
+    requires_approval: true
+    timeout: "1h"
+    timeout_message: "approval timeout"
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: ["namespace", "db_name", "k8s_pg_user_secret_name", "pg_user_secret_name", "k8s_pg_password_secret_name", "pg_password_secret_name", "justification"]
+      properties:
+        namespace:
+          type: string
+          pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+        db_name:
+          type: string
+          pattern: "^[a-z][a-z0-9_]{2,62}$"
+        k8s_pg_user_secret_name:
+          type: string
+          pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+        pg_user_secret_name:
+          type: string
+          pattern: "^[A-Z0-9_]+$"
+        k8s_pg_password_secret_name:
+          type: string
+          pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+        pg_password_secret_name:
+          type: string
+          pattern: "^[A-Z0-9_]+$"
+        justification:
+          type: string
+    approvers:
+      - type: limits
+        fields:
+          namespace:
+            regex: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+          db_name:
+            regex: "^[a-z][a-z0-9_]{2,62}$"
+          k8s_pg_user_secret_name:
+            regex: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+          pg_user_secret_name:
+            regex: "^[A-Z0-9_]+$"
+          k8s_pg_password_secret_name:
+            regex: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+          pg_password_secret_name:
+            regex: "^[A-Z0-9_]+$"
+      - type: shell
+        timeout: "1m"
+        command: |
+          set -euo pipefail
+          selector="{{ envOr "POSTGRES_POD_SELECTOR" "app=postgres" }}"
+          pod="$(kubectl -n {{ .Args.namespace }} get pods -l "$selector" -o jsonpath='{.items[0].metadata.name}')"
+          if [ -z "$pod" ]; then
+            echo "postgres pod not found"
+            exit 1
+          fi
+          pg_user="$(kubectl -n {{ .Args.namespace }} get secret {{ .Args.k8s_pg_user_secret_name }} -o jsonpath='{.data.{{ .Args.pg_user_secret_name }}}' | base64 -d)"
+          pg_password="$(kubectl -n {{ .Args.namespace }} get secret {{ .Args.k8s_pg_password_secret_name }} -o jsonpath='{.data.{{ .Args.pg_password_secret_name }}}' | base64 -d)"
+          if [ -z "$pg_user" ] || [ -z "$pg_password" ]; then
+            echo "postgres credentials not found"
+            exit 1
+          fi
+          if kubectl -n {{ .Args.namespace }} exec "$pod" -- env PGPASSWORD="$pg_password" psql -U "$pg_user" -tAc "SELECT 1 FROM pg_database WHERE datname='{{ .Args.db_name }}';" | grep -q 1; then
+            echo "database already exists"
+            exit 1
+          fi
+          exit 0
+      - type: http
+        timeout: "1h"
+        url: '{{ env "APPROVER_URL" }}'
+    executor:
+      type: shell
+      timeout: "1h"
+      command: |
+        set -euo pipefail
+        selector="{{ envOr "POSTGRES_POD_SELECTOR" "app=postgres" }}"
+        pod="$(kubectl -n {{ .Args.namespace }} get pods -l "$selector" -o jsonpath='{.items[0].metadata.name}')"
+        if [ -z "$pod" ]; then
+          echo "postgres pod not found"
+          exit 1
+        fi
+        pg_user="$(kubectl -n {{ .Args.namespace }} get secret {{ .Args.k8s_pg_user_secret_name }} -o jsonpath='{.data.{{ .Args.pg_user_secret_name }}}' | base64 -d)"
+        pg_password="$(kubectl -n {{ .Args.namespace }} get secret {{ .Args.k8s_pg_password_secret_name }} -o jsonpath='{.data.{{ .Args.pg_password_secret_name }}}' | base64 -d)"
+        if [ -z "$pg_user" ] || [ -z "$pg_password" ]; then
+          echo "postgres credentials not found"
+          exit 1
+        fi
+        kubectl -n {{ .Args.namespace }} exec "$pod" -- env PGPASSWORD="$pg_password" psql -U "$pg_user" -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"{{ .Args.db_name }}\";"
+        echo "database {{ .Args.db_name }} created in namespace {{ .Args.namespace }}"

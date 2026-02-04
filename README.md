@@ -139,6 +139,50 @@ resources:
     text: "Hello from yaml-mcp-server"
 ```
 
+## 🔄 Пример сквозного флоу для БД (GitHubSecretCreatorInK8s → PsqlDbCreatorInK8s)
+
+1) Модель запрашивает создание секрета с именем, например `PG_USER` и `PG_PASSWORD` через `GitHubSecretCreatorInK8s`.
+   Секреты создаются в GitHub и **сразу инъектятся** в Kubernetes в заданный namespace.
+2) Модель вызывает `PsqlDbCreatorInK8s`, передавая **только имена** секретов и ключей:
+   - `k8s_pg_user_secret_name` / `pg_user_secret_name`
+   - `k8s_pg_password_secret_name` / `pg_password_secret_name`
+3) Инструмент сам читает значения из K8s secrets и создаёт БД внутри PostgreSQL Pod.
+
+### Преимущества подхода
+
+- **Модель не видит секреты**, но может запускать согласованный автоматизированный процесс.
+- **Секреты сразу доступны сервисам** через Kubernetes Secret.
+- **Единая цепочка аппруверов и аудит** — весь поток проходит через yaml-mcp-server.
+
+### Пример запроса для PsqlDbCreatorInK8s
+
+```json
+{
+  "correlation_id": "corr-...",
+  "tool": "PsqlDbCreatorInK8s",
+  "arguments": {
+    "namespace": "project-ai-staging",
+    "db_name": "billing",
+    "k8s_pg_user_secret_name": "db-credentials",
+    "pg_user_secret_name": "PG_USER",
+    "k8s_pg_password_secret_name": "db-credentials",
+    "pg_password_secret_name": "PG_PASSWORD",
+    "justification": "Нужна новая БД для сервиса billing"
+  }
+}
+```
+
+### Пример ответа
+
+```json
+{
+  "status": "success",
+  "decision": "approve",
+  "reason": "database billing created in namespace project-ai-staging",
+  "correlation_id": "corr-..."
+}
+```
+
 ## 🧪 Аппруверы
 
 Поддерживаются:
@@ -207,6 +251,7 @@ resources:
 
 - `examples/secretcreator_shell.yaml`
 - `examples/secretcreator_shell_http.yaml`
+- `examples/psqldbcreator_shell_http.yaml`
 
 ## 🧷 Заметки по безопасности
 
