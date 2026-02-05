@@ -22,6 +22,7 @@
 
 - MCP‑сервер (HTTP/stdio) с динамическими инструментами из YAML‑DSL.
 - Последовательные аппруверы на инструмент: лимиты → shell → HTTP и т.д.
+- HTTP‑executor (sync/async) с webhook‑callback.
 - Идемпотентность (опционально): кэширование ответов на повторные запросы.
 - Жёсткий контракт ответов для модели: `status`, `decision`, `reason`, `correlation_id`.
 - Встроенные health endpoints: `/healthz`, `/readyz`.
@@ -60,6 +61,7 @@ yaml-mcp-server
 ```bash
 yaml-mcp-server --embedded-config github_secrets_postgres_k8s.yaml
 yaml-mcp-server --embedded-config github_review.yaml
+yaml-mcp-server --embedded-config telegram_feedback.yaml
 ```
 
 ## 🔌 Подключение к Codex (CLI/IDE)
@@ -127,6 +129,8 @@ server:
     read_timeout: "1h"
     write_timeout: "1h"
     idle_timeout: "1h"
+  approval_webhook_url: "http://yaml-mcp-server.local/approvals/webhook" # опционально, async HTTP approver
+  executor_webhook_url: "http://yaml-mcp-server.local/executors/webhook" # опционально, async HTTP executor
 ```
 
 `server.http.host` обязателен. Для локального теста можно указать `0.0.0.0`,
@@ -400,6 +404,7 @@ HTTP‑approver может быть **любым** сервисом, котор�
 - `YAML_MCP_CONFIG` — путь к YAML конфигу (по умолчанию `config.yaml`).
 - `YAML_MCP_GITHUB_REPO` — GitHub repo в формате `owner/name` (для tool, где repo фиксирован).
 - `YAML_MCP_APPROVAL_WEBHOOK_URL` — внешний URL для async‑callbacks (если есть async http‑аппруверы).
+- `YAML_MCP_EXECUTOR_WEBHOOK_URL` — внешний URL для async‑callbacks (если есть async http‑executor).
 - `YAML_MCP_LOG_LEVEL` — `debug|info|warn|error`.
 - `YAML_MCP_LANG` — `en` (default) или `ru`.
 - `YAML_MCP_SHUTDOWN_TIMEOUT` — таймаут graceful shutdown.
@@ -414,12 +419,18 @@ HTTP‑approver может быть **любым** сервисом, котор�
 - Обязательные: `YAML_MCP_GH_PAT`, `YAML_MCP_GITHUB_REPO`, `YAML_MCP_GH_USERNAME`
 - Опциональные: `YAML_MCP_LANG`, `YAML_MCP_LOG_LEVEL`
 
+**configs/telegram_feedback.yaml**
+- Обязательные: `YAML_MCP_EXECUTOR_URL`, `YAML_MCP_EXECUTOR_WEBHOOK_URL`
+- Опциональные: `YAML_MCP_LANG`, `YAML_MCP_LOG_LEVEL`
+
 ## 📄 Примеры
 
 - `configs/github_secrets_postgres_k8s.yaml`
   (содержит два инструмента: github_create_env_secret_k8s и k8s_create_postgres_db)
 - `configs/github_review.yaml`
   (инструменты для детерминированной работы с review/комментариями PR)
+- `configs/telegram_feedback.yaml`
+  (инструмент `telegram_request_feedback` с async HTTP executor)
 
 ## 🧷 Заметки по безопасности
 

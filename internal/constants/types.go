@@ -3,6 +3,7 @@ package constants
 // Executor type aliases.
 const (
 	ExecutorShell = "shell"
+	ExecutorHTTP  = "http"
 )
 
 // Approver type aliases.

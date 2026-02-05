@@ -1,0 +1,108 @@
+# MCP config for collecting user feedback in Telegram via async HTTP executor.
+server:
+  name: telegram_feedback_mcp
+  version: "0.1.0"
+  transport: "http"
+  shutdown_timeout: "10s"
+  idempotency_cache:
+    enabled: true
+    ttl: "24h"
+    max_entries: 2000
+    key_strategy: "auto"
+  http:
+    host: "0.0.0.0"
+    port: 8080
+    path: "/mcp"
+    read_timeout: "1h"
+    write_timeout: "1h"
+    idle_timeout: "1h"
+    session_timeout: "5m"
+    stateless: false
+  executor_webhook_url: '{{ env "YAML_MCP_EXECUTOR_WEBHOOK_URL" }}'
+
+tools:
+  - name: telegram_request_feedback
+    title: "Request user feedback in Telegram"
+    description: |
+      Sends a question to the user in Telegram and waits for a selected option.
+      Use this tool when user input is required to continue work.
+      Rules:
+      - Provide from 2 to 5 mutually exclusive options.
+      - Keep options concise and action-oriented.
+      - If uncertainty is high, set allow_custom=true so user can send own answer.
+      - custom option may be provided by text or voice message.
+      Input fields:
+      - question: what user should choose.
+      - options: list of choices (2..5).
+      - context (optional): extra context to show before options.
+      - allow_custom (optional): allow "custom option" button, default true.
+      - correlation_id (optional): stable id for idempotency and retries.
+    annotations:
+      read_only_hint: false
+      destructive_hint: false
+      idempotent_hint: false
+      open_world_hint: true
+      title: "Telegram Feedback"
+    requires_approval: false
+    timeout: "1h"
+    timeout_message: "feedback timeout"
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: ["question", "options"]
+      properties:
+        correlation_id:
+          type: string
+        question:
+          type: string
+          minLength: 10
+          maxLength: 1000
+        context:
+          type: string
+          maxLength: 2000
+        options:
+          type: array
+          minItems: 2
+          maxItems: 5
+          items:
+            type: string
+            minLength: 1
+            maxLength: 300
+        allow_custom:
+          type: boolean
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: ["status", "decision", "correlation_id"]
+      properties:
+        status:
+          type: string
+          enum: ["success", "denied", "error"]
+        decision:
+          type: string
+          enum: ["approve", "deny", "error"]
+        reason:
+          type: string
+        correlation_id:
+          type: string
+    executor:
+      type: http
+      timeout: "1h"
+      url: '{{ env "YAML_MCP_EXECUTOR_URL" }}'
+      async: true
+      spec:
+        kind: "telegram_feedback_v1"
+        options_min: 2
+        options_max: 5
+        allow_custom_option: true
+        custom_option_label: "🔧 Свой вариант"
+        allow_voice_custom_option: true
+
+resources:
+  - name: TelegramFeedback
+    uri: static:telegram-feedback
+    description: Telegram feedback usage
+    mime_type: text/plain
+    text: |
+      Tool telegram_request_feedback is available.
+      Use it to ask user to choose one option in Telegram.

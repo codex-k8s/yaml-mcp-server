@@ -21,6 +21,7 @@ explicit approval through pluggable approvers (HTTP/Shell/limits).
 
 - MCP server (HTTP/stdio) with tools created from YAML‑DSL.
 - Ordered approval chains per tool (limits → shell → HTTP, etc.).
+- HTTP executors (sync/async) with webhook callbacks.
 - Optional idempotency cache for repeated calls.
 - Strict response contract: `status`, `decision`, `reason`, `correlation_id`.
 - Health endpoints: `/healthz`, `/readyz`.
@@ -59,6 +60,7 @@ To use a config embedded from `configs/`, pass:
 ```bash
 yaml-mcp-server --embedded-config github_secrets_postgres_k8s.yaml
 yaml-mcp-server --embedded-config github_review.yaml
+yaml-mcp-server --embedded-config telegram_feedback.yaml
 ```
 
 ## 🔌 Connect to Codex (CLI/IDE)
@@ -126,6 +128,8 @@ server:
     read_timeout: "1h"
     write_timeout: "1h"
     idle_timeout: "1h"
+  approval_webhook_url: "http://yaml-mcp-server.local/approvals/webhook" # optional, async HTTP approvers
+  executor_webhook_url: "http://yaml-mcp-server.local/executors/webhook" # optional, async HTTP executors
 ```
 
 `server.http.host` is required. For local testing you can use `0.0.0.0`,
@@ -399,6 +403,7 @@ Use a nested expression:
 - `YAML_MCP_CONFIG` — path to YAML config (default `config.yaml`).
 - `YAML_MCP_GITHUB_REPO` — GitHub repo in `owner/name` format (for tools with fixed repo).
 - `YAML_MCP_APPROVAL_WEBHOOK_URL` — external URL for async callbacks (when async HTTP approvers are used).
+- `YAML_MCP_EXECUTOR_WEBHOOK_URL` — external URL for async callbacks (when async HTTP executors are used).
 - `YAML_MCP_LOG_LEVEL` — `debug|info|warn|error`.
 - `YAML_MCP_LANG` — `en` (default) or `ru`.
 - `YAML_MCP_SHUTDOWN_TIMEOUT` — graceful shutdown timeout.
@@ -413,12 +418,18 @@ Use a nested expression:
 - Required: `YAML_MCP_GH_PAT`, `YAML_MCP_GITHUB_REPO`, `YAML_MCP_GH_USERNAME`
 - Optional: `YAML_MCP_LANG`, `YAML_MCP_LOG_LEVEL`
 
+**configs/telegram_feedback.yaml**
+- Required: `YAML_MCP_EXECUTOR_URL`, `YAML_MCP_EXECUTOR_WEBHOOK_URL`
+- Optional: `YAML_MCP_LANG`, `YAML_MCP_LOG_LEVEL`
+
 ## 📄 Examples
 
 - `configs/github_secrets_postgres_k8s.yaml`
   (contains two tools: github_create_env_secret_k8s and k8s_create_postgres_db)
 - `configs/github_review.yaml`
   (tools for deterministic PR review/comment workflows)
+- `configs/telegram_feedback.yaml`
+  (tool `telegram_request_feedback` executed via async HTTP executor)
 
 ## 🧷 Security notes
 

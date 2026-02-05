@@ -76,6 +76,31 @@ func Validate(cfg *Config) error {
 		if strings.TrimSpace(tool.Executor.Type) == "" {
 			return fmt.Errorf("tools[%d].executor.type is required", i)
 		}
+		switch strings.ToLower(strings.TrimSpace(tool.Executor.Type)) {
+		case constants.ExecutorShell:
+		case constants.ExecutorHTTP:
+			if strings.TrimSpace(tool.Executor.URL) == "" {
+				return fmt.Errorf("tools[%d].executor.url is required for http executor", i)
+			}
+			if _, err := parseHTTPURL(tool.Executor.URL); err != nil {
+				return fmt.Errorf("tools[%d].executor.url is invalid: %w", i, err)
+			}
+			if strings.TrimSpace(tool.Executor.WebhookURL) != "" {
+				if _, err := parseWebhookURL(tool.Executor.WebhookURL); err != nil {
+					return fmt.Errorf("tools[%d].executor.webhook_url is invalid: %w", i, err)
+				}
+			}
+			if tool.Executor.Async {
+				if strings.TrimSpace(cfg.Server.ExecutorWebhookURL) == "" && strings.TrimSpace(tool.Executor.WebhookURL) == "" {
+					return fmt.Errorf("async http executor requires server.executor_webhook_url or executor.webhook_url")
+				}
+				if strings.EqualFold(cfg.Server.Transport, "stdio") {
+					return fmt.Errorf("async http executor requires http transport")
+				}
+			}
+		default:
+			return fmt.Errorf("tools[%d].executor.type is unsupported: %s", i, tool.Executor.Type)
+		}
 		for j, approver := range tool.Approvers {
 			if strings.TrimSpace(approver.Type) == "" {
 				return fmt.Errorf("tools[%d].approvers[%d].type is required", i, j)
@@ -110,6 +135,11 @@ func Validate(cfg *Config) error {
 			return fmt.Errorf("server.approval_webhook_url is invalid: %w", err)
 		}
 	}
+	if strings.TrimSpace(cfg.Server.ExecutorWebhookURL) != "" {
+		if _, err := parseWebhookURL(cfg.Server.ExecutorWebhookURL); err != nil {
+			return fmt.Errorf("server.executor_webhook_url is invalid: %w", err)
+		}
+	}
 
 	resourceURIs := map[string]struct{}{}
 	for i, res := range cfg.Resources {
@@ -135,6 +165,17 @@ func parseWebhookURL(raw string) (*url.URL, error) {
 	}
 	if strings.TrimSpace(parsed.Path) == "" || !strings.HasPrefix(parsed.Path, "/") {
 		return nil, fmt.Errorf("webhook url must include a path")
+	}
+	return parsed, nil
+}
+
+func parseHTTPURL(raw string) (*url.URL, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, fmt.Errorf("url is invalid: %w", err)
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return nil, fmt.Errorf("url must be absolute")
 	}
 	return parsed, nil
 }

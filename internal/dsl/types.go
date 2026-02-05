@@ -28,6 +28,8 @@ type ServerConfig struct {
 	HTTP HTTPConfig `yaml:"http"`
 	// ApprovalWebhookURL defines the callback URL for async approvers.
 	ApprovalWebhookURL string `yaml:"approval_webhook_url"`
+	// ExecutorWebhookURL defines the callback URL for async executors.
+	ExecutorWebhookURL string `yaml:"executor_webhook_url"`
 }
 
 // HTTPConfig configures the HTTP transport.
@@ -92,6 +94,18 @@ type ExecutorConfig struct {
 	Env map[string]string `yaml:"env"`
 	// Timeout is the executor timeout.
 	Timeout string `yaml:"timeout"`
+	// URL defines HTTP executor endpoint.
+	URL string `yaml:"url"`
+	// Method overrides HTTP method.
+	Method string `yaml:"method"`
+	// Headers adds HTTP headers.
+	Headers map[string]string `yaml:"headers"`
+	// Async enables webhook-based execution.
+	Async bool `yaml:"async"`
+	// WebhookURL overrides server executor webhook URL.
+	WebhookURL string `yaml:"webhook_url"`
+	// Spec carries declarative executor-specific settings.
+	Spec map[string]any `yaml:"spec"`
 }
 
 // HookConfig defines a startup hook command.

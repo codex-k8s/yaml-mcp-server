@@ -10,7 +10,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/codex-k8s/yaml-mcp-server/internal/approver/http"
+	approverhttp "github.com/codex-k8s/yaml-mcp-server/internal/approver/http"
 	"github.com/codex-k8s/yaml-mcp-server/internal/approver/limits"
 	"github.com/codex-k8s/yaml-mcp-server/internal/approver/shell"
 	"github.com/codex-k8s/yaml-mcp-server/internal/audit"
@@ -39,8 +39,12 @@ type Builder struct {
 	Lang string
 	// ApprovalWebhookURL is the callback URL for async approvers.
 	ApprovalWebhookURL string
+	// ExecutorWebhookURL is the callback URL for async executors.
+	ExecutorWebhookURL string
 	// HTTPApprovals stores pending async approvals.
-	HTTPApprovals *http.PendingStore
+	HTTPApprovals *approverhttp.PendingStore
+	// HTTPExecutions stores pending async executions.
+	HTTPExecutions *executor.PendingStore
 }
 
 // Build creates an MCP server with tools and resources.
@@ -76,7 +80,7 @@ func (b Builder) Build(cfg *dsl.Config) (*mcp.Server, error) {
 }
 
 func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
-	exec, err := buildExecutor(tool.Executor)
+	exec, err := buildExecutor(tool, b)
 	if err != nil {
 		return fmt.Errorf("tool %s: %w", tool.Name, err)
 	}
@@ -260,13 +264,45 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 	return nil
 }
 
-func buildExecutor(cfg dsl.ExecutorConfig) (executor.Executor, error) {
-	switch cfg.Type {
+func buildExecutor(tool dsl.ToolConfig, builder Builder) (executor.Executor, error) {
+	cfg := tool.Executor
+	switch strings.ToLower(strings.TrimSpace(cfg.Type)) {
 	case constants.ExecutorShell:
 		return executor.Shell{
 			Command: cfg.Command,
 			Args:    cfg.Args,
 			Env:     cfg.Env,
+		}, nil
+	case constants.ExecutorHTTP:
+		webhookURL := strings.TrimSpace(cfg.WebhookURL)
+		if webhookURL == "" {
+			webhookURL = strings.TrimSpace(builder.ExecutorWebhookURL)
+		}
+		return executor.HTTP{
+			URL:        cfg.URL,
+			Method:     cfg.Method,
+			Headers:    cfg.Headers,
+			Timeout:    parseDuration(cfg.Timeout, 10*time.Second),
+			Async:      cfg.Async,
+			WebhookURL: webhookURL,
+			Pending:    builder.HTTPExecutions,
+			Spec:       cfg.Spec,
+			Tool: protocol.ExecutorTool{
+				Name:        tool.Name,
+				Title:       tool.Title,
+				Description: tool.Description,
+				InputSchema: tool.InputSchema,
+				OutputSchema: func() map[string]any {
+					if len(tool.OutputSchema) == 0 {
+						return nil
+					}
+					return tool.OutputSchema
+				}(),
+				Metadata: tool.Metadata,
+				Tags:     tool.Tags,
+			},
+			Lang:   builder.Lang,
+			Markup: "markdown",
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown executor type: %s", cfg.Type)
@@ -291,7 +327,7 @@ func buildApprovers(configs []dsl.ApproverConfig, renderer templates.Renderer, b
 			if markup == "" {
 				markup = "markdown"
 			}
-			client := http.Client{
+			client := approverhttp.Client{
 				Label:      cfg.Name,
 				URL:        cfg.URL,
 				Method:     cfg.Method,

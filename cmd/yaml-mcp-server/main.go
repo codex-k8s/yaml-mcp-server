@@ -25,6 +25,7 @@ import (
 	"github.com/codex-k8s/yaml-mcp-server/internal/log"
 	"github.com/codex-k8s/yaml-mcp-server/internal/render"
 	"github.com/codex-k8s/yaml-mcp-server/internal/runtime"
+	runtimeexecutor "github.com/codex-k8s/yaml-mcp-server/internal/runtime/executor"
 	"github.com/codex-k8s/yaml-mcp-server/internal/startup"
 	"github.com/codex-k8s/yaml-mcp-server/internal/templates"
 )
@@ -87,12 +88,19 @@ func main() {
 		CacheKeyStrategy:   dslCfg.Server.Idempotency.KeyStrategy,
 		Lang:               cfg.Lang,
 		ApprovalWebhookURL: dslCfg.Server.ApprovalWebhookURL,
+		ExecutorWebhookURL: dslCfg.Server.ExecutorWebhookURL,
 	}
 	if hasAsyncHTTPApprover(dslCfg) {
 		builder.HTTPApprovals = approverhttp.NewPendingStore()
 	}
 	if builder.HTTPApprovals == nil && strings.TrimSpace(dslCfg.Server.ApprovalWebhookURL) != "" {
 		builder.HTTPApprovals = approverhttp.NewPendingStore()
+	}
+	if hasAsyncHTTPExecutor(dslCfg) {
+		builder.HTTPExecutions = runtimeexecutor.NewPendingStore()
+	}
+	if builder.HTTPExecutions == nil && strings.TrimSpace(dslCfg.Server.ExecutorWebhookURL) != "" {
+		builder.HTTPExecutions = runtimeexecutor.NewPendingStore()
 	}
 	server, err := builder.Build(dslCfg)
 	if err != nil {
@@ -124,7 +132,7 @@ func main() {
 		}
 		return
 	default:
-		if err := runHTTP(baseCtx, cfg, dslCfg, server, builder.HTTPApprovals, logger); err != nil {
+		if err := runHTTP(baseCtx, cfg, dslCfg, server, builder.HTTPApprovals, builder.HTTPExecutions, logger); err != nil {
 			logger.Error("runtime error", "error", err)
 			os.Exit(1)
 		}
@@ -135,7 +143,15 @@ func runStdio(ctx context.Context, server *mcp.Server) error {
 	return server.Run(ctx, &mcp.StdioTransport{})
 }
 
-func runHTTP(ctx context.Context, envCfg config.Config, dslCfg *dsl.Config, server *mcp.Server, approvals *approverhttp.PendingStore, logger *slog.Logger) error {
+func runHTTP(
+	ctx context.Context,
+	envCfg config.Config,
+	dslCfg *dsl.Config,
+	server *mcp.Server,
+	approvals *approverhttp.PendingStore,
+	executions *runtimeexecutor.PendingStore,
+	logger *slog.Logger,
+) error {
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server
 	}, &mcp.StreamableHTTPOptions{
@@ -143,10 +159,31 @@ func runHTTP(ctx context.Context, envCfg config.Config, dslCfg *dsl.Config, serv
 	})
 
 	extra := map[string]http.Handler{}
+	addRoute := func(path string, route http.Handler) error {
+		if strings.TrimSpace(path) == "" || route == nil {
+			return nil
+		}
+		if _, exists := extra[path]; exists {
+			return fmt.Errorf("duplicate extra http route: %s", path)
+		}
+		extra[path] = route
+		return nil
+	}
 	if strings.TrimSpace(dslCfg.Server.ApprovalWebhookURL) != "" {
 		path := webhookPath(dslCfg.Server.ApprovalWebhookURL)
 		if path != "" {
-			extra[path] = &approverhttp.WebhookHandler{Store: approvals, Logger: logger}
+			if err := addRoute(path, &approverhttp.WebhookHandler{Store: approvals, Logger: logger}); err != nil {
+				return err
+			}
+		}
+	}
+	for _, raw := range executorWebhookURLs(dslCfg) {
+		path := webhookPath(raw)
+		if path == "" {
+			continue
+		}
+		if err := addRoute(path, &runtimeexecutor.WebhookHandler{Store: executions, Logger: logger}); err != nil {
+			return err
 		}
 	}
 
@@ -170,6 +207,53 @@ func hasAsyncHTTPApprover(cfg *dsl.Config) bool {
 		}
 	}
 	return false
+}
+
+func hasAsyncHTTPExecutor(cfg *dsl.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	for _, tool := range cfg.Tools {
+		if strings.EqualFold(tool.Executor.Type, "http") && tool.Executor.Async {
+			return true
+		}
+	}
+	return false
+}
+
+func executorWebhookURLs(cfg *dsl.Config) []string {
+	if cfg == nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 1)
+	add := func(raw string) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return
+		}
+		if _, ok := seen[raw]; ok {
+			return
+		}
+		seen[raw] = struct{}{}
+		out = append(out, raw)
+	}
+
+	add(cfg.Server.ExecutorWebhookURL)
+	for _, tool := range cfg.Tools {
+		if !strings.EqualFold(tool.Executor.Type, "http") {
+			continue
+		}
+		if !tool.Executor.Async {
+			continue
+		}
+		if strings.TrimSpace(tool.Executor.WebhookURL) != "" {
+			add(tool.Executor.WebhookURL)
+			continue
+		}
+		add(cfg.Server.ExecutorWebhookURL)
+	}
+	return out
 }
 
 func webhookPath(raw string) string {
