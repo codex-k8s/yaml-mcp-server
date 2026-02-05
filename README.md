@@ -63,6 +63,8 @@ yaml-mcp-server --embedded-config github_review.yaml
 yaml-mcp-server --embedded-config telegram_feedback.yaml
 ```
 
+Docker images with preconfigured configs are published in GitHub Container Registry (see `docker/mcp-secrets-postgres-k8s.Dockerfile` and `docker/mcp-github-review.Dockerfile`), for example `ghcr.io/codex-k8s/yaml-mcp-server-secrets-postgres-k8s:v1.2.0`.
+
 ## 🔌 Connect to Codex (CLI/IDE)
 
 Codex stores MCP configuration in `~/.codex/config.toml`. You can also scope it per project with `.codex/config.toml`
