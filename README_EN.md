@@ -272,6 +272,10 @@ For `http` you can set:
 
 ### HTTP‑approver: request
 
+An HTTP approver can be **any** service that implements the contract below.
+You can build an approver via Telegram (see `telegram-approver`: https://github.com/codex-k8s/telegram-approver),
+or via Mattermost/Slack, or a more complex Jira workflow.
+
 ```json
 {
   "correlation_id": "corr-...",

@@ -273,6 +273,10 @@ resources:
 
 ### HTTP‑approver: формат запроса
 
+HTTP‑approver может быть **любым** сервисом, который соблюдает контракт ниже.
+Вы можете сделать аппрувер через Telegram (см. `telegram-approver`: https://github.com/codex-k8s/telegram-approver),
+через Mattermost/Slack, либо через более сложный процесс в Jira.
+
 ```json
 {
   "correlation_id": "corr-...",
