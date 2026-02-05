@@ -21,6 +21,7 @@ import (
 	"github.com/codex-k8s/yaml-mcp-server/internal/runtime/approver"
 	"github.com/codex-k8s/yaml-mcp-server/internal/runtime/executor"
 	"github.com/codex-k8s/yaml-mcp-server/internal/templates"
+	"github.com/codex-k8s/yaml-mcp-server/internal/timeutil"
 )
 
 // Builder constructs an MCP server from the DSL config.
@@ -90,9 +91,9 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 		return fmt.Errorf("tool %s: %w", tool.Name, err)
 	}
 
-	timeout := parseDuration(tool.Timeout, 0)
+	timeout := timeutil.ParseDurationOrDefault(tool.Timeout, 0)
 	if timeout == 0 {
-		timeout = parseDuration(tool.Executor.Timeout, 0)
+		timeout = timeutil.ParseDurationOrDefault(tool.Executor.Timeout, 0)
 	}
 
 	mcpTool := &mcp.Tool{
@@ -116,9 +117,7 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 		if b.Logger != nil {
 			b.Logger.Info("tool call", "tool", tool.Name, "correlation_id", correlationID, "args", args)
 		}
-		if b.Audit != nil {
-			b.Audit.Record(ctx, audit.Event{Type: "tool_call", Tool: tool.Name, CorrelationID: correlationID})
-		}
+		b.recordAudit(ctx, "tool_call", tool.Name, correlationID, "", "")
 
 		cacheKey := ""
 		if b.Cache != nil {
@@ -137,9 +136,7 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 				if b.Logger != nil {
 					b.Logger.Info("tool cache hit", "tool", tool.Name, "correlation_id", correlationID)
 				}
-				if b.Audit != nil {
-					b.Audit.Record(ctx, audit.Event{Type: "cache_hit", Tool: tool.Name, CorrelationID: correlationID, Decision: cached.Decision, Reason: cached.Reason})
-				}
+				b.recordAudit(ctx, "cache_hit", tool.Name, correlationID, cached.Decision, cached.Reason)
 				return nil, cached, nil
 			}
 		}
@@ -172,42 +169,28 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 				CorrelationID: correlationID,
 			})
 			if err != nil {
-				if errors.Is(ctxTool.Err(), context.DeadlineExceeded) {
-					resp.Status = protocol.StatusError
-					resp.Decision = protocol.DecisionError
-					resp.Reason = timeoutMessage(tool.TimeoutMessage)
-					applyResponseFormat(format, &resp)
+				if applyTimeoutResponse(ctxTool, &resp, tool.TimeoutMessage, format) {
 					return nil, resp, nil
 				}
 				resp.Status = protocol.StatusError
 				resp.Decision = protocol.DecisionError
 				resp.Reason = err.Error()
-				if b.Audit != nil {
-					b.Audit.Record(ctx, audit.Event{Type: "approval_error", Tool: tool.Name, CorrelationID: correlationID, Decision: protocol.DecisionError, Reason: err.Error()})
-				}
+				b.recordAudit(ctx, "approval_error", tool.Name, correlationID, protocol.DecisionError, err.Error())
 				applyResponseFormat(format, &resp)
 				return nil, resp, nil
 			}
-			if errors.Is(ctxTool.Err(), context.DeadlineExceeded) {
-				resp.Status = protocol.StatusError
-				resp.Decision = protocol.DecisionError
-				resp.Reason = timeoutMessage(tool.TimeoutMessage)
-				applyResponseFormat(format, &resp)
+			if applyTimeoutResponse(ctxTool, &resp, tool.TimeoutMessage, format) {
 				return nil, resp, nil
 			}
 			if !decision.Allowed {
 				resp.Status = protocol.StatusDenied
 				resp.Decision = protocol.DecisionDeny
 				resp.Reason = decision.Reason
-				if b.Audit != nil {
-					b.Audit.Record(ctx, audit.Event{Type: "approval_denied", Tool: tool.Name, CorrelationID: correlationID, Decision: protocol.DecisionDeny, Reason: decision.Reason})
-				}
+				b.recordAudit(ctx, "approval_denied", tool.Name, correlationID, protocol.DecisionDeny, decision.Reason)
 				applyResponseFormat(format, &resp)
 				return nil, resp, nil
 			}
-			if b.Audit != nil {
-				b.Audit.Record(ctx, audit.Event{Type: "approval_ok", Tool: tool.Name, CorrelationID: correlationID, Decision: protocol.DecisionApprove, Reason: decision.Reason})
-			}
+			b.recordAudit(ctx, "approval_ok", tool.Name, correlationID, protocol.DecisionApprove, decision.Reason)
 		}
 
 		output, err := exec.Execute(ctxTool, executor.Request{
@@ -216,11 +199,7 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 			CorrelationID: correlationID,
 		})
 		if err != nil {
-			if errors.Is(ctxTool.Err(), context.DeadlineExceeded) {
-				resp.Status = protocol.StatusError
-				resp.Decision = protocol.DecisionError
-				resp.Reason = timeoutMessage(tool.TimeoutMessage)
-				applyResponseFormat(format, &resp)
+			if applyTimeoutResponse(ctxTool, &resp, tool.TimeoutMessage, format) {
 				return nil, resp, nil
 			}
 			resp.Status = protocol.StatusError
@@ -229,34 +208,24 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 			if output != "" {
 				resp.Reason = fmt.Sprintf("%s: %s", resp.Reason, output)
 			}
-			if b.Audit != nil {
-				b.Audit.Record(ctx, audit.Event{Type: "tool_error", Tool: tool.Name, CorrelationID: correlationID, Decision: protocol.DecisionError, Reason: resp.Reason})
-			}
+			b.recordAudit(ctx, "tool_error", tool.Name, correlationID, protocol.DecisionError, resp.Reason)
 			applyResponseFormat(format, &resp)
 			return nil, resp, nil
 		}
 
-		if errors.Is(ctxTool.Err(), context.DeadlineExceeded) {
-			resp.Status = protocol.StatusError
-			resp.Decision = protocol.DecisionError
-			resp.Reason = timeoutMessage(tool.TimeoutMessage)
-			applyResponseFormat(format, &resp)
+		if applyTimeoutResponse(ctxTool, &resp, tool.TimeoutMessage, format) {
 			return nil, resp, nil
 		}
 
 		resp.Reason = output
 		applyResponseFormat(format, &resp)
-		if b.Audit != nil {
-			b.Audit.Record(ctx, audit.Event{Type: "tool_ok", Tool: tool.Name, CorrelationID: correlationID, Decision: protocol.DecisionApprove, Reason: output})
-		}
+		b.recordAudit(ctx, "tool_ok", tool.Name, correlationID, protocol.DecisionApprove, output)
 		if b.Cache != nil && cacheKey != "" && resp.Status != protocol.StatusError {
 			b.Cache.Set(cacheKey, resp)
 			if b.Logger != nil {
 				b.Logger.Info("tool response cached", "tool", tool.Name, "correlation_id", correlationID)
 			}
-			if b.Audit != nil {
-				b.Audit.Record(ctx, audit.Event{Type: "cache_store", Tool: tool.Name, CorrelationID: correlationID, Decision: resp.Decision, Reason: resp.Reason})
-			}
+			b.recordAudit(ctx, "cache_store", tool.Name, correlationID, resp.Decision, resp.Reason)
 		}
 		return nil, resp, nil
 	})
@@ -282,7 +251,7 @@ func buildExecutor(tool dsl.ToolConfig, builder Builder) (executor.Executor, err
 			URL:        cfg.URL,
 			Method:     cfg.Method,
 			Headers:    cfg.Headers,
-			Timeout:    parseDuration(cfg.Timeout, 10*time.Second),
+			Timeout:    timeutil.ParseDurationOrDefault(cfg.Timeout, 10*time.Second),
 			Async:      cfg.Async,
 			WebhookURL: webhookURL,
 			Pending:    builder.HTTPExecutions,
@@ -316,7 +285,7 @@ func buildApprovers(configs []dsl.ApproverConfig, renderer templates.Renderer, b
 
 	var items []approver.Approver
 	for _, cfg := range configs {
-		timeout := parseDuration(cfg.Timeout, 0)
+		timeout := timeutil.ParseDurationOrDefault(cfg.Timeout, 0)
 		switch cfg.Type {
 		case constants.ApproverHTTP:
 			webhookURL := strings.TrimSpace(cfg.WebhookURL)
@@ -332,7 +301,7 @@ func buildApprovers(configs []dsl.ApproverConfig, renderer templates.Renderer, b
 				URL:        cfg.URL,
 				Method:     cfg.Method,
 				Headers:    cfg.Headers,
-				Timeout:    parseDuration(cfg.Timeout, 10*time.Second),
+				Timeout:    timeutil.ParseDurationOrDefault(cfg.Timeout, 10*time.Second),
 				Async:      cfg.Async,
 				Lang:       builder.Lang,
 				Markup:     markup,
@@ -386,22 +355,35 @@ func toFieldPolicies(policies map[string]dsl.FieldPolicy) map[string]limits.Fiel
 	return out
 }
 
-func parseDuration(value string, def time.Duration) time.Duration {
-	if strings.TrimSpace(value) == "" {
-		return def
-	}
-	parsed, err := time.ParseDuration(value)
-	if err != nil {
-		return def
-	}
-	return parsed
-}
-
 func timeoutMessage(value string) string {
 	if strings.TrimSpace(value) == "" {
 		return "timeout"
 	}
 	return value
+}
+
+func (b Builder) recordAudit(ctx context.Context, eventType, tool, correlationID, decision, reason string) {
+	if b.Audit == nil {
+		return
+	}
+	b.Audit.Record(ctx, audit.Event{
+		Type:          eventType,
+		Tool:          tool,
+		CorrelationID: correlationID,
+		Decision:      decision,
+		Reason:        reason,
+	})
+}
+
+func applyTimeoutResponse(ctx context.Context, resp *protocol.ToolResponse, timeoutMsg, format string) bool {
+	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return false
+	}
+	resp.Status = protocol.StatusError
+	resp.Decision = protocol.DecisionError
+	resp.Reason = timeoutMessage(timeoutMsg)
+	applyResponseFormat(format, resp)
+	return true
 }
 
 func buildAnnotations(cfg *dsl.ToolAnnotationsConfig) *mcp.ToolAnnotations {

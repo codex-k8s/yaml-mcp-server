@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/codex-k8s/yaml-mcp-server/internal/maputil"
 	"github.com/codex-k8s/yaml-mcp-server/internal/protocol"
 )
 
@@ -45,12 +46,7 @@ func (s *PendingStore) Register(correlationID string) (<-chan asyncResult, error
 
 // Resolve delivers an async execution result for correlationID.
 func (s *PendingStore) Resolve(correlationID, status, result string) bool {
-	s.mu.Lock()
-	entry, ok := s.pending[correlationID]
-	if ok {
-		delete(s.pending, correlationID)
-	}
-	s.mu.Unlock()
+	entry, ok := maputil.Pop(&s.mu, s.pending, correlationID)
 	if !ok {
 		return false
 	}
@@ -65,12 +61,7 @@ func (s *PendingStore) Resolve(correlationID, status, result string) bool {
 
 // Cancel removes a pending execution without a result.
 func (s *PendingStore) Cancel(correlationID string) {
-	s.mu.Lock()
-	entry, ok := s.pending[correlationID]
-	if ok {
-		delete(s.pending, correlationID)
-	}
-	s.mu.Unlock()
+	entry, ok := maputil.Pop(&s.mu, s.pending, correlationID)
 	if ok {
 		close(entry.ch)
 	}

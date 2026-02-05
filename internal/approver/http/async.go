@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/codex-k8s/yaml-mcp-server/internal/maputil"
 	"github.com/codex-k8s/yaml-mcp-server/internal/protocol"
 	"github.com/codex-k8s/yaml-mcp-server/internal/runtime/approver"
 )
@@ -42,12 +43,7 @@ func (s *PendingStore) Register(correlationID, source string) (<-chan approver.D
 
 // Resolve delivers a decision for correlationID.
 func (s *PendingStore) Resolve(correlationID string, decision approver.Decision) bool {
-	s.mu.Lock()
-	entry, ok := s.pending[correlationID]
-	if ok {
-		delete(s.pending, correlationID)
-	}
-	s.mu.Unlock()
+	entry, ok := maputil.Pop(&s.mu, s.pending, correlationID)
 	if !ok {
 		return false
 	}
@@ -64,12 +60,7 @@ func (s *PendingStore) Resolve(correlationID string, decision approver.Decision)
 
 // Cancel removes a pending approval without a decision.
 func (s *PendingStore) Cancel(correlationID string) {
-	s.mu.Lock()
-	entry, ok := s.pending[correlationID]
-	if ok {
-		delete(s.pending, correlationID)
-	}
-	s.mu.Unlock()
+	entry, ok := maputil.Pop(&s.mu, s.pending, correlationID)
 	if ok {
 		close(entry.ch)
 	}

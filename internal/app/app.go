@@ -13,6 +13,7 @@ import (
 
 	"github.com/codex-k8s/yaml-mcp-server/internal/dsl"
 	"github.com/codex-k8s/yaml-mcp-server/internal/http/health"
+	"github.com/codex-k8s/yaml-mcp-server/internal/timeutil"
 )
 
 // App controls the HTTP server lifecycle.
@@ -33,9 +34,9 @@ func New(baseCtx context.Context, serverCfg dsl.ServerConfig, handler http.Handl
 		return nil, fmt.Errorf("base context is nil")
 	}
 
-	readTimeout := parseDuration(serverCfg.HTTP.ReadTimeout, 15*time.Second)
-	writeTimeout := parseDuration(serverCfg.HTTP.WriteTimeout, 15*time.Second)
-	idleTimeout := parseDuration(serverCfg.HTTP.IdleTimeout, 60*time.Second)
+	readTimeout := timeutil.ParseDurationOrDefault(serverCfg.HTTP.ReadTimeout, 15*time.Second)
+	writeTimeout := timeutil.ParseDurationOrDefault(serverCfg.HTTP.WriteTimeout, 15*time.Second)
+	idleTimeout := timeutil.ParseDurationOrDefault(serverCfg.HTTP.IdleTimeout, 60*time.Second)
 
 	healthHandler := health.New()
 	mux := http.NewServeMux()
@@ -59,7 +60,7 @@ func New(baseCtx context.Context, serverCfg dsl.ServerConfig, handler http.Handl
 	}
 
 	if shutdownTimeout == 0 {
-		shutdownTimeout = parseDuration(serverCfg.ShutdownTimeout, 10*time.Second)
+		shutdownTimeout = timeutil.ParseDurationOrDefault(serverCfg.ShutdownTimeout, 10*time.Second)
 	}
 
 	return &App{
@@ -109,15 +110,4 @@ func (a *App) shutdown() error {
 		return err
 	}
 	return nil
-}
-
-func parseDuration(value string, def time.Duration) time.Duration {
-	if strings.TrimSpace(value) == "" {
-		return def
-	}
-	parsed, err := time.ParseDuration(value)
-	if err != nil {
-		return def
-	}
-	return parsed
 }

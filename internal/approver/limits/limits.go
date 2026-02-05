@@ -121,34 +121,92 @@ func (s *Store) checkFields(args map[string]any) error {
 
 		switch v := value.(type) {
 		case string:
-			if policy.MinLength != nil && len(v) < *policy.MinLength {
-				return errors.New(s.render("limits.field_min_length", map[string]any{"Field": field, "MinLength": *policy.MinLength}, "Field "+field+" is too short"))
-			}
-			if policy.MaxLength != nil && len(v) > *policy.MaxLength {
-				return errors.New(s.render("limits.field_max_length", map[string]any{"Field": field, "MaxLength": *policy.MaxLength}, "Field "+field+" is too long"))
+			if err := s.checkStringLength(field, v, policy); err != nil {
+				return err
 			}
 			re := s.compiled[field]
 			if re != nil && !re.MatchString(v) {
 				return errors.New(s.render("limits.field_regex", map[string]any{"Field": field}, "Field "+field+" does not match required format"))
 			}
 		case float64:
-			if policy.Min != nil && v < *policy.Min {
-				return errors.New(s.render("limits.field_min", map[string]any{"Field": field, "Min": *policy.Min}, "Field "+field+" is below minimum value"))
-			}
-			if policy.Max != nil && v > *policy.Max {
-				return errors.New(s.render("limits.field_max", map[string]any{"Field": field, "Max": *policy.Max}, "Field "+field+" is above maximum value"))
+			if err := s.checkNumericRange(field, v, policy); err != nil {
+				return err
 			}
 		case int:
-			val := float64(v)
-			if policy.Min != nil && val < *policy.Min {
-				return errors.New(s.render("limits.field_min", map[string]any{"Field": field, "Min": *policy.Min}, "Field "+field+" is below minimum value"))
-			}
-			if policy.Max != nil && val > *policy.Max {
-				return errors.New(s.render("limits.field_max", map[string]any{"Field": field, "Max": *policy.Max}, "Field "+field+" is above maximum value"))
+			if err := s.checkNumericRange(field, float64(v), policy); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
+}
+
+func (s *Store) checkStringLength(field, value string, policy FieldPolicy) error {
+	return s.checkMinMax(
+		field,
+		float64(len(value)),
+		toFloat64(policy.MinLength),
+		toFloat64(policy.MaxLength),
+		boundarySpec{Key: "limits.field_min_length", DataKey: "MinLength", FallbackTemplate: "Field %s is too short"},
+		boundarySpec{Key: "limits.field_max_length", DataKey: "MaxLength", FallbackTemplate: "Field %s is too long"},
+	)
+}
+
+func (s *Store) checkNumericRange(field string, value float64, policy FieldPolicy) error {
+	return s.checkMinMax(
+		field,
+		value,
+		policy.Min,
+		policy.Max,
+		boundarySpec{Key: "limits.field_min", DataKey: "Min", FallbackTemplate: "Field %s is below minimum value"},
+		boundarySpec{Key: "limits.field_max", DataKey: "Max", FallbackTemplate: "Field %s is above maximum value"},
+	)
+}
+
+type boundarySpec struct {
+	Key              string
+	DataKey          string
+	FallbackTemplate string
+}
+
+func (s *Store) checkMinMax(field string, value float64, min, max *float64, minSpec, maxSpec boundarySpec) error {
+	checks := []struct {
+		limit    *float64
+		violated bool
+		spec     boundarySpec
+	}{
+		{limit: min, violated: min != nil && value < *min, spec: minSpec},
+		{limit: max, violated: max != nil && value > *max, spec: maxSpec},
+	}
+	for _, check := range checks {
+		if check.limit == nil {
+			continue
+		}
+		if err := s.renderBoundary(
+			check.violated,
+			check.spec.Key,
+			map[string]any{"Field": field, check.spec.DataKey: *check.limit},
+			fmt.Sprintf(check.spec.FallbackTemplate, field),
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func toFloat64(value *int) *float64 {
+	if value == nil {
+		return nil
+	}
+	out := float64(*value)
+	return &out
+}
+
+func (s *Store) renderBoundary(violated bool, key string, data map[string]any, fallback string) error {
+	if !violated {
+		return nil
+	}
+	return errors.New(s.render(key, data, fallback))
 }
 
 func (s *Store) render(key string, data map[string]any, fallback string) string {
