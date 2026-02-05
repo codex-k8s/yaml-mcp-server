@@ -75,17 +75,37 @@ func (c Client) Approve(ctx context.Context, req approver.Request) (approver.Dec
 		}
 	}
 
-	if justification, ok := extractString(req.Arguments, "justification"); ok {
-		if err := validateReasonLength("justification", justification); err != nil {
-			return approver.Decision{Allowed: false, Reason: err.Error(), Source: c.Name()}, nil
-		}
+	var validationErrors []string
+
+	justification, ok := extractString(req.Arguments, "justification")
+	if !ok {
+		validationErrors = append(validationErrors, "justification is required")
+	} else if err := validateReasonLength("justification", justification); err != nil {
+		validationErrors = append(validationErrors, err.Error())
+	} else {
 		payload.Justification = justification
 	}
-	if approvalRequest, ok := extractString(req.Arguments, "approval_request"); ok {
-		if err := validateReasonLength("approval_request", approvalRequest); err != nil {
-			return approver.Decision{Allowed: false, Reason: err.Error(), Source: c.Name()}, nil
-		}
+
+	approvalRequest, ok := extractString(req.Arguments, "approval_request")
+	if !ok {
+		validationErrors = append(validationErrors, "approval_request is required")
+	} else if err := validateReasonLength("approval_request", approvalRequest); err != nil {
+		validationErrors = append(validationErrors, err.Error())
+	} else {
 		payload.ApprovalRequest = approvalRequest
+	}
+
+	riskAssessment, ok := extractString(req.Arguments, "risk_assessment")
+	if !ok {
+		validationErrors = append(validationErrors, "risk_assessment is required")
+	} else if err := validateReasonLength("risk_assessment", riskAssessment); err != nil {
+		validationErrors = append(validationErrors, err.Error())
+	} else {
+		payload.RiskAssessment = riskAssessment
+	}
+
+	if len(validationErrors) > 0 {
+		return approver.Decision{Allowed: false, Reason: strings.Join(validationErrors, "; "), Source: c.Name()}, nil
 	}
 	if links, ok := extractLinks(req.Arguments); ok {
 		payload.LinksToCode = links

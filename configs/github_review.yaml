@@ -1,3 +1,5 @@
+# NOTE: Approval fields are rendered in Telegram with MarkdownV2 when HTTP approvers are used.
+# Use plain text or escape MarkdownV2 special characters if you add formatting.
 server:
   name: github_review_mcp
   version: "0.1.0"

@@ -65,6 +65,8 @@ type ApproverRequest struct {
 	Justification string `json:"justification,omitempty"`
 	// ApprovalRequest describes the requested action (10-500 chars).
 	ApprovalRequest string `json:"approval_request,omitempty"`
+	// RiskAssessment describes potential risks (10-500 chars).
+	RiskAssessment string `json:"risk_assessment,omitempty"`
 	// LinksToCode are optional code references.
 	LinksToCode []ApproverLink `json:"links_to_code,omitempty"`
 	// Lang selects message language (ru/en).
