@@ -1,83 +1,82 @@
 <div align="center">
   <img src="docs/media/logo.png" alt="yaml-mcp-server logo" width="120" height="120" />
   <h1>yaml-mcp-server</h1>
-  <p>🔐 MCP‑gateway с декларативными инструментами из YAML и системой аппруверов для безопасных действий модели.</p>
+  <p>🔐 MCP gateway with declarative YAML tools and a pluggable approval system for safe model actions.</p>
 </div>
 
 ![Go Version](https://img.shields.io/github/go-mod/go-version/codex-k8s/yaml-mcp-server)
 [![Go Reference](https://pkg.go.dev/badge/github.com/codex-k8s/yaml-mcp-server.svg)](https://pkg.go.dev/github.com/codex-k8s/yaml-mcp-server)
 
-🇬🇧 English version: [README_EN.md](README_EN.md)
+🇷🇺 Русская версия: [README_RU.md](README_RU.md)
 
-`yaml-mcp-server` — единый MCP‑сервер в кластере, который читает YAML‑DSL с описанием ресурсов и инструментов,
-подключает цепочки аппруверов и возвращает модели строго структурированные ответы.
+`yaml-mcp-server` is a single MCP server for a cluster that reads a YAML‑DSL to define tools and resources,
+executes approver chains, and returns strictly structured responses.
 
-## 🎯 Идея и мотивация
+## 🎯 Idea and Motivation
 
-Задача сервиса — безопасно исполнять потенциально опасные операции модели
-(создание секретов, изменения инфраструктуры/репозиториев и т.д.)
-**только после явного approval** через pluggable‑аппруверы (HTTP/Shell/лимиты).
+The server enables **safe execution** of high‑risk operations (secrets, infra/repo changes, etc.) by requiring
+explicit approval through pluggable approvers (HTTP/Shell/limits).
 
-## ✅ Ключевые возможности
+## ✅ Key Features
 
-- MCP‑сервер (HTTP/stdio) с динамическими инструментами из YAML‑DSL.
-- Последовательные аппруверы на инструмент: лимиты → shell → HTTP и т.д.
-- Идемпотентность (опционально): кэширование ответов на повторные запросы.
-- Жёсткий контракт ответов для модели: `status`, `decision`, `reason`, `correlation_id`.
-- Встроенные health endpoints: `/healthz`, `/readyz`.
-- Шаблонизация YAML с проверкой всех используемых env до старта.
+- MCP server (HTTP/stdio) with tools created from YAML‑DSL.
+- Ordered approval chains per tool (limits → shell → HTTP, etc.).
+- Optional idempotency cache for repeated calls.
+- Strict response contract: `status`, `decision`, `reason`, `correlation_id`.
+- Health endpoints: `/healthz`, `/readyz`.
+- YAML templating with env checks before startup.
 
-## 🔗 Связанные репозитории
+## 🔗 Related repositories
 
-- `telegram-approver` — Telegram‑аппрувер для approval‑флоу: https://github.com/codex-k8s/telegram-approver
-- `codexctl` — CLI‑оркестратор окружений и Codex‑потоков: https://github.com/codex-k8s/codexctl
-- `project-example` — пример Kubernetes‑проекта с готовыми манифестами: https://github.com/codex-k8s/project-example
+- `telegram-approver` — Telegram approver for approval flow: https://github.com/codex-k8s/telegram-approver
+- `codexctl` — CLI orchestrator for environments and Codex workflows: https://github.com/codex-k8s/codexctl
+- `project-example` — Kubernetes project example with ready manifests: https://github.com/codex-k8s/project-example
 
-## 📦 Установка
+## 📦 Installation
 
-Требуется Go **>= 1.25.5** (см. `go.mod`).
+Go **>= 1.25.5** is required (see `go.mod`).
 
 ```bash
 go install github.com/codex-k8s/yaml-mcp-server/cmd/yaml-mcp-server@latest
 ```
 
-## 🚀 Быстрый старт
+## 🚀 Quick Start
 
 ```bash
 export YAML_MCP_CONFIG=/path/to/config.yaml
-export YAML_MCP_LANG=ru
+export YAML_MCP_LANG=en
 export YAML_MCP_LOG_LEVEL=info
 
 yaml-mcp-server
 ```
 
-По умолчанию HTTP‑endpoint MCP: `http://localhost:8080/mcp`.
+Default MCP HTTP endpoint: `http://localhost:8080/mcp`.
 
-### Встроенные конфиги
+### Embedded configs
 
-Если нужно использовать встроенный конфиг из `configs/`, укажите флаг:
+To use a config embedded from `configs/`, pass:
 
 ```bash
 yaml-mcp-server --embedded-config github_secrets_postgres_k8s.yaml
 yaml-mcp-server --embedded-config github_review.yaml
 ```
 
-## 🔌 Подключение к Codex (CLI/IDE)
+## 🔌 Connect to Codex (CLI/IDE)
 
-Codex читает конфигурацию MCP из `~/.codex/config.toml`, либо из проектного `.codex/config.toml` (для trusted projects).
-Есть два способа добавить сервер:
+Codex stores MCP configuration in `~/.codex/config.toml`. You can also scope it per project with `.codex/config.toml`
+for trusted projects. The CLI and IDE extension share the same configuration.
 
-### Вариант 1 — через CLI
+### Option 1 — via CLI
 
 ```bash
 codex mcp add github_secrets_postgres_k8s_mcp --url http://localhost:8080/mcp
 codex mcp list
 ```
 
-После добавления обязательно выставьте `tool_timeout_sec` в `config.toml`, чтобы ожидание аппруверов не обрывалось
-клиентом Codex (таймаут считается в секундах).
+After adding, make sure to set `tool_timeout_sec` in `config.toml` so Codex does not terminate long approval flows
+on the client side (seconds).
 
-### Вариант 2 — через config.toml
+### Option 2 — via config.toml
 
 ```toml
 [mcp_servers.github_secrets_postgres_k8s_mcp]
@@ -85,9 +84,9 @@ url = "http://localhost:8080/mcp"
 tool_timeout_sec = 3600
 ```
 
-Если сервер развёрнут в кластере, укажите URL ingress/port‑forward (или сервисный DNS) и добавьте его тем же способом.
+If the server is deployed in a cluster, use an ingress/port‑forward URL (or service DNS).
 
-Дополнительно можно подключить встроенный конфиг для review‑потоков:
+You can also attach the built-in review workflow config:
 
 ```toml
 [mcp_servers.github_review_mcp]
@@ -95,11 +94,11 @@ url = "http://localhost:8080/mcp"
 tool_timeout_sec = 600
 ```
 
-## 🧩 YAML‑DSL (кратко)
+## 🧩 YAML‑DSL (short)
 
-YAML описывает сервер, инструменты и ресурсы. Пример см. в `configs/`.
+YAML defines server settings, tools, and resources. See `configs/`.
 
-### Сервер
+### Server
 
 ```yaml
 server:
@@ -129,19 +128,19 @@ server:
     idle_timeout: "1h"
 ```
 
-`server.http.host` обязателен. Для локального теста можно указать `0.0.0.0`,
-но это **небезопасно** — используйте его только в изолированной среде.
+`server.http.host` is required. For local testing you can use `0.0.0.0`,
+but this is **unsafe** — only use it in an isolated environment.
 
-### Идемпотентность
+### Idempotency
 
-Если включить `server.idempotency_cache`, сервер будет возвращать сохранённый ответ
-для повторных вызовов одного и того же инструмента.
-Ключ вычисляется по `correlation_id`/`request_id` (если задан) или по хэшу аргументов.
+If `server.idempotency_cache` is enabled, the server returns cached responses
+for repeated tool calls. Cache keys are derived from `correlation_id`/`request_id`
+(if provided) or from a hash of arguments.
 
-### Инструмент
+### Tool
 
-Рекомендуем придерживаться нейминга `snake_case` с префиксом сервиса
-(например, `github_*` или `k8s_*`), чтобы избегать коллизий между MCP‑сервером и внешними инструментами.
+Use `snake_case` tool names with a service prefix (for example, `github_*` or `k8s_*`)
+to avoid collisions with other MCP servers.
 
 ```yaml
 tools:
@@ -224,7 +223,7 @@ tools:
         echo "secret {{ "{{ .Args.secret_name }}" }} created in $repo env {{ "{{ .Args.environment }}" }} and injected into {{ "{{ .Args.namespace }}" }}/{{ "{{ .Args.k8s_secret_name }}" }}"
 ```
 
-### Ресурсы
+### Resources
 
 ```yaml
 resources:
@@ -235,23 +234,23 @@ resources:
     text: "Hello from yaml-mcp-server"
 ```
 
-## 🔄 Пример сквозного флоу для БД (github_create_env_secret_k8s → k8s_create_postgres_db)
+## 🔄 End‑to‑end DB flow (github_create_env_secret_k8s → k8s_create_postgres_db)
 
-1) Модель запрашивает создание секрета с именем, например `PG_USER` и `PG_PASSWORD` через
-   `github_create_env_secret_k8s` (два отдельных вызова).
-   Секреты создаются в GitHub и **сразу инъектятся** в Kubernetes в заданный namespace.
-2) Модель вызывает `k8s_create_postgres_db`, передавая **только имена** секретов и ключей:
+1) The model requests secrets such as `PG_USER` and `PG_PASSWORD` via
+   `github_create_env_secret_k8s` (two separate calls).
+   Secrets are created in GitHub and **immediately injected** into Kubernetes.
+2) The model calls `k8s_create_postgres_db`, passing only secret names and keys:
    - `k8s_pg_user_secret_name` / `pg_user_secret_name`
    - `k8s_pg_password_secret_name` / `pg_password_secret_name`
-3) Инструмент сам читает значения из K8s secrets и создаёт БД внутри PostgreSQL Pod.
+3) The tool reads values from K8s secrets and creates the database inside the PostgreSQL pod.
 
-### Преимущества подхода
+### Benefits of this approach
 
-- **Модель не видит секреты**, но может запускать согласованный автоматизированный процесс.
-- **Секреты сразу доступны сервисам** через Kubernetes Secret.
-- **Единая цепочка аппруверов и аудит** — весь поток проходит через yaml-mcp-server.
+- **The model never sees secret values**, but can still execute an approved workflow.
+- **Secrets are immediately available** to services via Kubernetes Secret.
+- **Unified approval chain and audit** through yaml-mcp-server.
 
-### Пример запроса для k8s_create_postgres_db
+### k8s_create_postgres_db request example
 
 ```json
 {
@@ -264,14 +263,14 @@ resources:
     "pg_user_secret_name": "PG_USER",
     "k8s_pg_password_secret_name": "db-credentials",
     "pg_password_secret_name": "PG_PASSWORD",
-    "justification": "Нужна новая БД для сервиса billing",
-    "approval_request": "Создать БД и назначить владельца по секретам в Kubernetes.",
-    "risk_assessment": "Может создать лишнюю БД при ошибке в имени; требует внимательной проверки."
+    "justification": "New database required for billing service",
+    "approval_request": "Create a DB and set the owner using Kubernetes secrets.",
+    "risk_assessment": "May create an extra DB if the name is wrong; requires careful review."
   }
 }
 ```
 
-### Пример ответа
+### Response example
 
 ```json
 {
@@ -282,26 +281,26 @@ resources:
 }
 ```
 
-## 🧪 Аппруверы
+## 🧪 Approvers
 
-Поддерживаются:
+Supported approvers:
 
-- `limits` — лимиты/валидации полей (regex, min/max, min/max length).
-- `shell` — approval по результату shell‑команды.
-- `http` — approval через внешний HTTP‑сервис.
+- `limits` — rate limits and field validation (regex, min/max, length).
+- `shell` — approval based on a shell command.
+- `http` — approval via external HTTP service.
 
-**Порядок строго как в YAML.** На первом `deny` цепочка прерывается.
+**Order is exactly as in YAML.** Chain stops on first `deny`.
 
-Для `http` доступны параметры:
+For `http` you can set:
 `async` (true/false), `markup` (markdown/html), `webhook_url` (override).
 
-`markup: markdown` использует **MarkdownV2** (Telegram).
+`markup: markdown` uses **MarkdownV2** (Telegram).
 
-### HTTP‑approver: формат запроса
+### HTTP‑approver: request
 
-HTTP‑approver может быть **любым** сервисом, который соблюдает контракт ниже.
-Вы можете сделать аппрувер через Telegram (см. `telegram-approver`: https://github.com/codex-k8s/telegram-approver),
-через Mattermost/Slack, либо через более сложный процесс в Jira.
+An HTTP approver can be **any** service that implements the contract below.
+You can build an approver via Telegram (see `telegram-approver`: https://github.com/codex-k8s/telegram-approver),
+or via Mattermost/Slack, or a more complex Jira workflow.
 
 ```json
 {
@@ -313,13 +312,13 @@ HTTP‑approver может быть **любым** сервисом, котор�
     "namespace": "project-ai-staging",
     "k8s_secret_name": "db-credentials"
   },
-  "justification": "Нужен новый пароль для сервиса billing.",
-  "approval_request": "Создать секрет и инъектировать в Kubernetes.",
-  "risk_assessment": "Может затронуть доступ к БД в случае неправильного использования нового секрета.",
+  "justification": "Need a new password for the billing service.",
+  "approval_request": "Create a secret and inject it into Kubernetes.",
+  "risk_assessment": "May affect DB access if the new secret is misused.",
   "links_to_code": [
     { "text": "PR #42", "url": "https://github.com/org/repo/pull/42" }
   ],
-  "lang": "ru",
+  "lang": "en",
   "markup": "markdown",
   "timeout_sec": 3600,
   "callback": {
@@ -328,29 +327,29 @@ HTTP‑approver может быть **любым** сервисом, котор�
 }
 ```
 
-Поля:
-- `justification`, `approval_request`, `risk_assessment`: 10–500 символов (**обязательны**).
-- `links_to_code`: до 5 ссылок (`text`, `url`).
+Fields:
+- `justification`, `approval_request`, `risk_assessment`: 10–500 chars (**required**).
+- `links_to_code`: up to 5 links (`text`, `url`).
 - `lang`: `ru`/`en`.
 - `markup`: `markdown`/`html`.
 
-### HTTP‑approver: формат ответа
+### HTTP‑approver: response
 
 ```json
 { "decision": "approve", "reason": "ok" }
 ```
 
-`decision` принимает: `approve | deny | error` (для async также возможен `pending`).
+`decision` is: `approve | deny | error` (for async, `pending` is also allowed).
 
 ### HTTP‑approver (async)
 
-Если `approver.async: true`, аппрувер может вернуть:
+If `approver.async: true`, the approver may return:
 
 ```json
 { "decision": "pending", "reason": "queued" }
 ```
 
-А затем отправить webhook в `server.approval_webhook_url`:
+Then it sends a webhook to `server.approval_webhook_url`:
 
 ```json
 {
@@ -360,10 +359,10 @@ HTTP‑approver может быть **любым** сервисом, котор�
 }
 ```
 
-⚠️ Безопасность: webhook не защищён секретом. Ограничьте доступ на сетевом уровне
-(Kubernetes NetworkPolicy, service mesh/mTLS, приватный Service + запрет Ingress).
+⚠️ Security: the webhook has no shared secret. Restrict access at the network level
+(Kubernetes NetworkPolicy, service mesh/mTLS, private Service + no public Ingress).
 
-## 📡 Протокол ответов инструмента
+## 📡 Tool Response Protocol
 
 ```json
 {
@@ -374,17 +373,17 @@ HTTP‑approver может быть **любым** сервисом, котор�
 }
 ```
 
-## 🔧 Шаблонизация YAML
+## 🔧 YAML templating
 
-Поддерживаемые функции:
+Available template functions:
 
 - `env`, `envOr`, `default`, `ternary`, `join`, `lower`, `upper`, `trimPrefix`, `trimSuffix`, `replace`.
 
-Сервер проверяет, что все используемые env переменные заданы **до старта**.
+The server checks that all referenced env vars exist **before** startup.
 
-⚠️ Важно: конфиг рендерится **при старте** сервера. Все выражения вида `{{ .Args.* }}` должны
-быть **экранированы**, чтобы они отработали во время вызова инструмента, а не на старте.
-Используй вложенное выражение:
+⚠️ Important: the config is rendered **at startup**. Any `{{ .Args.* }}` expressions must be
+**escaped** so they are evaluated at tool call time, not during startup.
+Use a nested expression:
 
 ```
 {{ "{{ .Args.secret_name }}" }}
@@ -395,37 +394,37 @@ HTTP‑approver может быть **любым** сервисом, котор�
 - `GET /healthz` — liveness
 - `GET /readyz` — readiness
 
-## ⚙️ Переменные окружения
+## ⚙️ Environment Variables
 
-- `YAML_MCP_CONFIG` — путь к YAML конфигу (по умолчанию `config.yaml`).
-- `YAML_MCP_GITHUB_REPO` — GitHub repo в формате `owner/name` (для tool, где repo фиксирован).
-- `YAML_MCP_APPROVAL_WEBHOOK_URL` — внешний URL для async‑callbacks (если есть async http‑аппруверы).
+- `YAML_MCP_CONFIG` — path to YAML config (default `config.yaml`).
+- `YAML_MCP_GITHUB_REPO` — GitHub repo in `owner/name` format (for tools with fixed repo).
+- `YAML_MCP_APPROVAL_WEBHOOK_URL` — external URL for async callbacks (when async HTTP approvers are used).
 - `YAML_MCP_LOG_LEVEL` — `debug|info|warn|error`.
-- `YAML_MCP_LANG` — `en` (default) или `ru`.
-- `YAML_MCP_SHUTDOWN_TIMEOUT` — таймаут graceful shutdown.
+- `YAML_MCP_LANG` — `en` (default) or `ru`.
+- `YAML_MCP_SHUTDOWN_TIMEOUT` — graceful shutdown timeout.
 
-### Переменные и секреты для встроенных конфигов
+### Embedded config envs & secrets
 
 **configs/github_secrets_postgres_k8s.yaml**
-- Обязательные: `YAML_MCP_GH_PAT`, `YAML_MCP_GITHUB_REPO`, `YAML_MCP_APPROVER_URL`, `YAML_MCP_APPROVAL_WEBHOOK_URL`
-- Опциональные: `YAML_MCP_LANG`, `YAML_MCP_LOG_LEVEL`, `YAML_MCP_POSTGRES_POD_SELECTOR`
+- Required: `YAML_MCP_GH_PAT`, `YAML_MCP_GITHUB_REPO`, `YAML_MCP_APPROVER_URL`, `YAML_MCP_APPROVAL_WEBHOOK_URL`
+- Optional: `YAML_MCP_LANG`, `YAML_MCP_LOG_LEVEL`, `YAML_MCP_POSTGRES_POD_SELECTOR`
 
 **configs/github_review.yaml**
-- Обязательные: `YAML_MCP_GH_PAT`, `YAML_MCP_GITHUB_REPO`, `YAML_MCP_GH_USERNAME`
-- Опциональные: `YAML_MCP_LANG`, `YAML_MCP_LOG_LEVEL`
+- Required: `YAML_MCP_GH_PAT`, `YAML_MCP_GITHUB_REPO`, `YAML_MCP_GH_USERNAME`
+- Optional: `YAML_MCP_LANG`, `YAML_MCP_LOG_LEVEL`
 
-## 📄 Примеры
+## 📄 Examples
 
 - `configs/github_secrets_postgres_k8s.yaml`
-  (содержит два инструмента: github_create_env_secret_k8s и k8s_create_postgres_db)
+  (contains two tools: github_create_env_secret_k8s and k8s_create_postgres_db)
 - `configs/github_review.yaml`
-  (инструменты для детерминированной работы с review/комментариями PR)
+  (tools for deterministic PR review/comment workflows)
 
-## 🧷 Заметки по безопасности
+## 🧷 Security notes
 
-`yaml-mcp-server` — это **универсальный MCP‑gateway**, который изолирует опасные действия от модели и даёт выполнять их
-только через явный approval. Пример с GitHub‑secret — лишь демонстрация подхода: модель не знает токенов и значений,
-но может инициировать создание через утверждённый поток.
+`yaml-mcp-server` is a **general MCP gateway** that isolates risky actions from the model and only allows execution
+through explicit approval. The GitHub secret flow is just an example: the model does not know tokens or secret values,
+but can request creation via an approved flow.
 
-Пока **нет встроенного разграничения прав доступа**. Поэтому сервис должен работать либо локально,
-либо в кластере с жёстким сетевым ограничением доступа к `yaml-mcp-server`.
+There is **no built-in access control yet**. Run the service either locally or in a cluster with strict network access
+restrictions to the `yaml-mcp-server`.
