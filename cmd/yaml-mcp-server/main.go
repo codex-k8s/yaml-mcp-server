@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 
 	"github.com/codex-k8s/yaml-mcp-server/configs"
 	"github.com/codex-k8s/yaml-mcp-server/internal/app"
+	approverhttp "github.com/codex-k8s/yaml-mcp-server/internal/approver/http"
 	"github.com/codex-k8s/yaml-mcp-server/internal/audit"
 	"github.com/codex-k8s/yaml-mcp-server/internal/config"
 	"github.com/codex-k8s/yaml-mcp-server/internal/dsl"
@@ -77,11 +80,19 @@ func main() {
 	}
 
 	builder := runtime.Builder{
-		Logger:           logger,
-		Audit:            audit.New(logger),
-		Templates:        templateBundle,
-		Cache:            cache,
-		CacheKeyStrategy: dslCfg.Server.Idempotency.KeyStrategy,
+		Logger:             logger,
+		Audit:              audit.New(logger),
+		Templates:          templateBundle,
+		Cache:              cache,
+		CacheKeyStrategy:   dslCfg.Server.Idempotency.KeyStrategy,
+		Lang:               cfg.Lang,
+		ApprovalWebhookURL: dslCfg.Server.ApprovalWebhookURL,
+	}
+	if hasAsyncHTTPApprover(dslCfg) {
+		builder.HTTPApprovals = approverhttp.NewPendingStore()
+	}
+	if builder.HTTPApprovals == nil && strings.TrimSpace(dslCfg.Server.ApprovalWebhookURL) != "" {
+		builder.HTTPApprovals = approverhttp.NewPendingStore()
 	}
 	server, err := builder.Build(dslCfg)
 	if err != nil {
@@ -113,7 +124,7 @@ func main() {
 		}
 		return
 	default:
-		if err := runHTTP(baseCtx, cfg, dslCfg, server, logger); err != nil {
+		if err := runHTTP(baseCtx, cfg, dslCfg, server, builder.HTTPApprovals, logger); err != nil {
 			logger.Error("runtime error", "error", err)
 			os.Exit(1)
 		}
@@ -124,17 +135,54 @@ func runStdio(ctx context.Context, server *mcp.Server) error {
 	return server.Run(ctx, &mcp.StdioTransport{})
 }
 
-func runHTTP(ctx context.Context, envCfg config.Config, dslCfg *dsl.Config, server *mcp.Server, logger *slog.Logger) error {
+func runHTTP(ctx context.Context, envCfg config.Config, dslCfg *dsl.Config, server *mcp.Server, approvals *approverhttp.PendingStore, logger *slog.Logger) error {
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server
 	}, &mcp.StreamableHTTPOptions{
 		Stateless: dslCfg.Server.HTTP.Stateless,
 	})
 
-	application, err := app.New(ctx, dslCfg.Server, handler, logger, envCfg.ShutdownTimeout)
+	extra := map[string]http.Handler{}
+	if strings.TrimSpace(dslCfg.Server.ApprovalWebhookURL) != "" {
+		path := webhookPath(dslCfg.Server.ApprovalWebhookURL)
+		if path != "" {
+			extra[path] = &approverhttp.WebhookHandler{Store: approvals, Logger: logger}
+		}
+	}
+
+	application, err := app.New(ctx, dslCfg.Server, handler, extra, logger, envCfg.ShutdownTimeout)
 	if err != nil {
 		return err
 	}
 
 	return application.Run(ctx)
+}
+
+func hasAsyncHTTPApprover(cfg *dsl.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	for _, tool := range cfg.Tools {
+		for _, approver := range tool.Approvers {
+			if strings.EqualFold(approver.Type, "http") && approver.Async {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func webhookPath(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+	path := strings.TrimSpace(parsed.Path)
+	if path == "" {
+		return ""
+	}
+	if !strings.HasPrefix(path, "/") {
+		return "/" + path
+	}
+	return path
 }

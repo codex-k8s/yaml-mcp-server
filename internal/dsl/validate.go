@@ -2,6 +2,7 @@ package dsl
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -73,6 +74,34 @@ func Validate(cfg *Config) error {
 			if strings.TrimSpace(approver.Type) == "" {
 				return fmt.Errorf("tools[%d].approvers[%d].type is required", i, j)
 			}
+			if strings.EqualFold(approver.Type, constants.ApproverHTTP) {
+				if strings.TrimSpace(approver.Markup) != "" {
+					switch strings.ToLower(strings.TrimSpace(approver.Markup)) {
+					case "markdown", "html":
+					default:
+						return fmt.Errorf("tools[%d].approvers[%d].markup must be markdown or html", i, j)
+					}
+				}
+				if strings.TrimSpace(approver.WebhookURL) != "" {
+					if _, err := parseWebhookURL(approver.WebhookURL); err != nil {
+						return fmt.Errorf("tools[%d].approvers[%d].webhook_url is invalid: %w", i, j, err)
+					}
+				}
+				if approver.Async {
+					if strings.TrimSpace(cfg.Server.ApprovalWebhookURL) == "" && strings.TrimSpace(approver.WebhookURL) == "" {
+						return fmt.Errorf("async http approver requires server.approval_webhook_url or approver.webhook_url")
+					}
+					if strings.EqualFold(cfg.Server.Transport, "stdio") {
+						return fmt.Errorf("async http approver requires http transport")
+					}
+				}
+			}
+		}
+	}
+
+	if strings.TrimSpace(cfg.Server.ApprovalWebhookURL) != "" {
+		if _, err := parseWebhookURL(cfg.Server.ApprovalWebhookURL); err != nil {
+			return fmt.Errorf("server.approval_webhook_url is invalid: %w", err)
 		}
 	}
 
@@ -88,4 +117,18 @@ func Validate(cfg *Config) error {
 	}
 
 	return nil
+}
+
+func parseWebhookURL(raw string) (*url.URL, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, fmt.Errorf("webhook url is invalid: %w", err)
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return nil, fmt.Errorf("webhook url must be absolute")
+	}
+	if strings.TrimSpace(parsed.Path) == "" || !strings.HasPrefix(parsed.Path, "/") {
+		return nil, fmt.Errorf("webhook url must include a path")
+	}
+	return parsed, nil
 }

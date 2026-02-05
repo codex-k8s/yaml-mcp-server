@@ -23,7 +23,7 @@ type App struct {
 }
 
 // New initializes the HTTP server with health endpoints.
-func New(baseCtx context.Context, serverCfg dsl.ServerConfig, handler http.Handler, logger *slog.Logger, shutdownTimeout time.Duration) (*App, error) {
+func New(baseCtx context.Context, serverCfg dsl.ServerConfig, handler http.Handler, extra map[string]http.Handler, logger *slog.Logger, shutdownTimeout time.Duration) (*App, error) {
 	if handler == nil {
 		return nil, fmt.Errorf("handler is nil")
 	}
@@ -40,6 +40,12 @@ func New(baseCtx context.Context, serverCfg dsl.ServerConfig, handler http.Handl
 	mux.Handle(serverCfg.HTTP.Path, handler)
 	mux.HandleFunc("/healthz", healthHandler.Healthz)
 	mux.HandleFunc("/readyz", healthHandler.Readyz)
+	for path, route := range extra {
+		if strings.TrimSpace(path) == "" || route == nil {
+			continue
+		}
+		mux.Handle(path, route)
+	}
 
 	srv := &http.Server{
 		Addr:         serverCfg.HTTP.Listen,

@@ -268,6 +268,9 @@ resources:
 
 **Порядок строго как в YAML.** На первом `deny` цепочка прерывается.
 
+Для `http` доступны параметры:
+`async` (true/false), `markup` (markdown/html), `webhook_url` (override).
+
 ### HTTP‑approver: формат запроса
 
 ```json
@@ -279,9 +282,26 @@ resources:
     "environment": "ai-staging",
     "namespace": "project-ai-staging",
     "k8s_secret_name": "db-credentials"
+  },
+  "justification": "Нужен новый пароль для сервиса billing.",
+  "approval_request": "Создать секрет и инъектировать в Kubernetes.",
+  "links_to_code": [
+    { "text": "PR #42", "url": "https://github.com/org/repo/pull/42" }
+  ],
+  "lang": "ru",
+  "markup": "markdown",
+  "timeout_sec": 3600,
+  "callback": {
+    "url": "http://yaml-mcp-server.codex-system.svc.cluster.local/approvals/webhook"
   }
 }
 ```
+
+Поля:
+- `justification`, `approval_request`: 10–500 символов.
+- `links_to_code`: до 5 ссылок (`text`, `url`).
+- `lang`: `ru`/`en`.
+- `markup`: `markdown`/`html`.
 
 ### HTTP‑approver: формат ответа
 
@@ -289,7 +309,28 @@ resources:
 { "decision": "approve", "reason": "ok" }
 ```
 
-`decision` принимает ровно: `approve | deny | error`.
+`decision` принимает: `approve | deny | error` (для async также возможен `pending`).
+
+### HTTP‑approver (async)
+
+Если `approver.async: true`, аппрувер может вернуть:
+
+```json
+{ "decision": "pending", "reason": "queued" }
+```
+
+А затем отправить webhook в `server.approval_webhook_url`:
+
+```json
+{
+  "correlation_id": "corr-...",
+  "decision": "deny",
+  "reason": "Not enough context"
+}
+```
+
+⚠️ Безопасность: webhook не защищён секретом. Ограничьте доступ на сетевом уровне
+(Kubernetes NetworkPolicy, service mesh/mTLS, приватный Service + запрет Ingress).
 
 ## 📡 Протокол ответов инструмента
 
@@ -327,6 +368,7 @@ resources:
 
 - `YAML_MCP_CONFIG` — путь к YAML конфигу (по умолчанию `config.yaml`).
 - `YAML_MCP_GITHUB_REPO` — GitHub repo в формате `owner/name` (для tool, где repo фиксирован).
+- `YAML_MCP_APPROVAL_WEBHOOK_URL` — внешний URL для async‑callbacks (если есть async http‑аппруверы).
 - `YAML_MCP_LOG_LEVEL` — `debug|info|warn|error`.
 - `YAML_MCP_LANG` — `en` (default) или `ru`.
 - `YAML_MCP_SHUTDOWN_TIMEOUT` — таймаут graceful shutdown.
@@ -334,7 +376,7 @@ resources:
 ### Переменные и секреты для встроенных конфигов
 
 **configs/github_secrets_postgres_k8s.yaml**
-- Обязательные: `YAML_MCP_GH_PAT`, `YAML_MCP_GITHUB_REPO`, `YAML_MCP_APPROVER_URL`
+- Обязательные: `YAML_MCP_GH_PAT`, `YAML_MCP_GITHUB_REPO`, `YAML_MCP_APPROVER_URL`, `YAML_MCP_APPROVAL_WEBHOOK_URL`
 - Опциональные: `YAML_MCP_LANG`, `YAML_MCP_LOG_LEVEL`, `YAML_MCP_POSTGRES_POD_SELECTOR`
 
 **configs/github_review.yaml**

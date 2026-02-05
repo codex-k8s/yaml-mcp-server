@@ -35,6 +35,12 @@ type Builder struct {
 	Cache *idempotency.Cache
 	// CacheKeyStrategy selects how cache keys are computed.
 	CacheKeyStrategy string
+	// Lang selects approver language.
+	Lang string
+	// ApprovalWebhookURL is the callback URL for async approvers.
+	ApprovalWebhookURL string
+	// HTTPApprovals stores pending async approvals.
+	HTTPApprovals *http.PendingStore
 }
 
 // Build creates an MCP server with tools and resources.
@@ -75,7 +81,7 @@ func (b Builder) addTool(server *mcp.Server, tool dsl.ToolConfig) error {
 		return fmt.Errorf("tool %s: %w", tool.Name, err)
 	}
 
-	chain, err := buildApprovers(tool.Approvers, b.Templates)
+	chain, err := buildApprovers(tool.Approvers, b.Templates, b)
 	if err != nil {
 		return fmt.Errorf("tool %s: %w", tool.Name, err)
 	}
@@ -267,7 +273,7 @@ func buildExecutor(cfg dsl.ExecutorConfig) (executor.Executor, error) {
 	}
 }
 
-func buildApprovers(configs []dsl.ApproverConfig, renderer templates.Renderer) (approver.Chain, error) {
+func buildApprovers(configs []dsl.ApproverConfig, renderer templates.Renderer, builder Builder) (approver.Chain, error) {
 	if len(configs) == 0 {
 		return approver.Chain{}, nil
 	}
@@ -277,12 +283,25 @@ func buildApprovers(configs []dsl.ApproverConfig, renderer templates.Renderer) (
 		timeout := parseDuration(cfg.Timeout, 0)
 		switch cfg.Type {
 		case constants.ApproverHTTP:
+			webhookURL := strings.TrimSpace(cfg.WebhookURL)
+			if webhookURL == "" {
+				webhookURL = strings.TrimSpace(builder.ApprovalWebhookURL)
+			}
+			markup := strings.TrimSpace(cfg.Markup)
+			if markup == "" {
+				markup = "markdown"
+			}
 			client := http.Client{
-				Label:   cfg.Name,
-				URL:     cfg.URL,
-				Method:  cfg.Method,
-				Headers: cfg.Headers,
-				Timeout: parseDuration(cfg.Timeout, 10*time.Second),
+				Label:      cfg.Name,
+				URL:        cfg.URL,
+				Method:     cfg.Method,
+				Headers:    cfg.Headers,
+				Timeout:    parseDuration(cfg.Timeout, 10*time.Second),
+				Async:      cfg.Async,
+				Lang:       builder.Lang,
+				Markup:     markup,
+				Pending:    builder.HTTPApprovals,
+				WebhookURL: webhookURL,
 			}
 			items = append(items, wrapTimeout(client, timeout))
 		case constants.ApproverShell:

@@ -26,6 +26,8 @@ type ServerConfig struct {
 	StartupHooks []HookConfig `yaml:"startup_hooks"`
 	// HTTP configures HTTP transport.
 	HTTP HTTPConfig `yaml:"http"`
+	// ApprovalWebhookURL defines the callback URL for async approvers.
+	ApprovalWebhookURL string `yaml:"approval_webhook_url"`
 }
 
 // HTTPConfig configures the HTTP transport.
@@ -116,6 +118,12 @@ type ApproverConfig struct {
 	Method string `yaml:"method"`
 	// Headers adds HTTP headers.
 	Headers map[string]string `yaml:"headers"`
+	// Async enables webhook-based approvals.
+	Async bool `yaml:"async"`
+	// Markup selects approver message formatting (markdown/html).
+	Markup string `yaml:"markup"`
+	// WebhookURL overrides the server approval webhook URL.
+	WebhookURL string `yaml:"webhook_url"`
 	// Command is a shell approver command.
 	Command string `yaml:"command"`
 	// Args are shell approver arguments.
