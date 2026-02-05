@@ -957,3 +957,11 @@ tools:
         gh api -X POST "repos/$repo/issues/$issue_number/comments" --input "$tmp" >/dev/null
         rm -f "$tmp"
         echo "question posted to $issue_number"
+
+resources:
+  - name: GithubReview
+    uri: static:github-review
+    description: Toolset overview
+    mime_type: text/plain
+    text: |
+      This MCP server exposes review and issue workflow tools for GitHub repository operations.

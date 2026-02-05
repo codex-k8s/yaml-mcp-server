@@ -32,9 +32,9 @@ tools:
       - If uncertainty is high, set allow_custom=true so user can send own answer.
       - custom option may be provided by text or voice message.
       Input fields:
-      - question: what user should choose.
-      - options: list of choices (2..5).
-      - context (optional): extra context to show before options.
+      - question: question text in language "{{ envOr "YAML_MCP_LANG" "en" }}".
+      - options: list of choices (2..5) in language "{{ envOr "YAML_MCP_LANG" "en" }}".
+      - context (optional): extra context to show before options, in language "{{ envOr "YAML_MCP_LANG" "en" }}".
       - allow_custom (optional): allow "custom option" button, default true.
       - correlation_id (optional): stable id for idempotency and retries.
     annotations:
@@ -95,7 +95,6 @@ tools:
         options_min: 2
         options_max: 5
         allow_custom_option: true
-        custom_option_label: "🔧 Свой вариант"
         allow_voice_custom_option: true
 
 resources:

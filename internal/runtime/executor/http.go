@@ -70,7 +70,7 @@ func (h HTTP) Execute(ctx context.Context, req Request) (string, error) {
 		Tool:          h.Tool,
 		Arguments:     req.Arguments,
 		Spec:          h.Spec,
-		Lang:          h.Lang,
+		Lang:          normalizeLang(h.Lang, "en"),
 		Markup:        h.Markup,
 		TimeoutSec:    timeoutSec,
 	}
@@ -196,5 +196,20 @@ func stringifyResult(value any) string {
 			return fmt.Sprintf("%v", typed)
 		}
 		return strings.TrimSpace(string(data))
+	}
+}
+
+func normalizeLang(value, fallback string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	switch value {
+	case "ru", "en":
+		return value
+	}
+	fallback = strings.TrimSpace(strings.ToLower(fallback))
+	switch fallback {
+	case "ru", "en":
+		return fallback
+	default:
+		return "en"
 	}
 }
