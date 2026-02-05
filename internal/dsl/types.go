@@ -32,8 +32,10 @@ type ServerConfig struct {
 
 // HTTPConfig configures the HTTP transport.
 type HTTPConfig struct {
-	// Listen is the HTTP listen address.
-	Listen string `yaml:"listen"`
+	// Host is the HTTP listen host.
+	Host string `yaml:"host"`
+	// Port is the HTTP listen port.
+	Port int `yaml:"port"`
 	// Path is the MCP HTTP endpoint path.
 	Path string `yaml:"path"`
 	// ReadTimeout limits request read time.

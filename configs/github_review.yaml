@@ -18,7 +18,8 @@ server:
         set -euo pipefail
         printf %s "$YAML_MCP_GH_PAT" | gh auth login --with-token
   http:
-    listen: ":8080"
+    host: "0.0.0.0"
+    port: 8080
     path: "/mcp"
     read_timeout: "10m"
     write_timeout: "10m"

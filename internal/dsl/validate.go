@@ -23,8 +23,14 @@ func Validate(cfg *Config) error {
 	if cfg.Server.Transport == "" {
 		cfg.Server.Transport = "http"
 	}
-	if cfg.Server.HTTP.Listen == "" {
-		cfg.Server.HTTP.Listen = ":8080"
+	if cfg.Server.HTTP.Port == 0 {
+		cfg.Server.HTTP.Port = 8080
+	}
+	if strings.TrimSpace(cfg.Server.HTTP.Host) == "" {
+		return fmt.Errorf("server.http.host is required")
+	}
+	if cfg.Server.HTTP.Port < 1 || cfg.Server.HTTP.Port > 65535 {
+		return fmt.Errorf("server.http.port must be between 1 and 65535")
 	}
 	if cfg.Server.HTTP.Path == "" {
 		cfg.Server.HTTP.Path = "/mcp"

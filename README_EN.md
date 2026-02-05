@@ -120,12 +120,16 @@ server:
       command: |
         printf %s "$YAML_MCP_GH_PAT" | gh auth login --with-token
   http:
-    listen: ":8080"
+    host: "127.0.0.1"
+    port: 8080
     path: "/mcp"
     read_timeout: "1h"
     write_timeout: "1h"
     idle_timeout: "1h"
 ```
+
+`server.http.host` is required. For local testing you can use `0.0.0.0`,
+but this is **unsafe** — only use it in an isolated environment.
 
 ### Idempotency
 

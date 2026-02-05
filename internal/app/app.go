@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,8 +49,9 @@ func New(baseCtx context.Context, serverCfg dsl.ServerConfig, handler http.Handl
 		mux.Handle(path, route)
 	}
 
+	addr := net.JoinHostPort(strings.TrimSpace(serverCfg.HTTP.Host), strconv.Itoa(serverCfg.HTTP.Port))
 	srv := &http.Server{
-		Addr:         serverCfg.HTTP.Listen,
+		Addr:         addr,
 		Handler:      mux,
 		ReadTimeout:  readTimeout,
 		WriteTimeout: writeTimeout,
